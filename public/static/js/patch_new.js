@@ -2,15 +2,7 @@ function PatchController($scope, $filter, $window, notificationService) {
   $scope.userTz = $window.userTz;
   $scope.canEdit = $window.canEdit;
 
-  $scope.selectedTask = {
-    v: "",
-    get: function() {
-      return $scope.selectedTask.v;
-    },
-    set: function(val) {
-      $scope.selectedTask.v = val;
-    }
-  };
+  $scope.ALL_VARIANTS_KEY = 'ALL'
 
   $scope.selectedVariant = {
     v: "",
@@ -22,11 +14,25 @@ function PatchController($scope, $filter, $window, notificationService) {
     }
   };
 
+  $scope.xxx = function(){
+    console.log(arguments)
+  }
+  
+  $scope.numSetForVariant = function(variantId){
+    return _.values($scope.selectedTasksByVariant[variantId]).filter(function(x){return x}).length || undefined
+  }
+
+
   $scope.setPatchInfo = function() {
     $scope.patch = $window.patch;
+    $scope.patchContainer = {'Patch':$scope.patch}
     var patch = $scope.patch;
+
     var allTasks = _.sortBy($window.tasks, 'Name')
     var allVariants = $window.variants;
+
+    var selectedTasksByVariant = {}
+    console.log(selectedTasksByVariant)
 
     var allVariantsModels = [];
     var allVariantsModelsOriginal = [];
@@ -45,6 +51,23 @@ function PatchController($scope, $filter, $window, notificationService) {
       allVariantsModelsOriginal.push(_.clone(variant));
     }
 
+    _.each(allVariantsModelsOriginal, function(x){
+      selectedTasksByVariant[x.id] = {}
+      _.each(allTasks, function(y){
+        selectedTasksByVariant[x.id][y.Name] = false
+      })
+    })
+
+    // populate a special "all variants" variant
+    // that has all the tasks under key ''.
+    selectedTasksByVariant[''] = {};
+    allTasks.forEach(function(x){
+      selectedTasksByVariant[''][x.Name] = false
+    });
+
+    $scope.selectedTasksByVariant = selectedTasksByVariant
+    console.log(selectedTasksByVariant)
+
     // Create a map from tasks to list of build variants that run that task
     $scope.buildVariantsForTask = {};
     _.each(allVariantsModelsOriginal, function(variant) {
@@ -57,6 +80,26 @@ function PatchController($scope, $filter, $window, notificationService) {
         }
       });
     });
+
+    // Whenever the user makes changes to the "all variants" variant,
+    // go back and update the selections on the normal variants.
+    /*
+    $scope.$watch(
+      function($scope){
+        return $scope.selectedTasksByVariant['']
+      },
+      function(oldVal, newVal){
+        _.each($scope.selectedTasksByVariant[''], function(allVariantTask, activated){
+          _.each($scope.selectedTasksByVariant, function(variant, tasks){
+            if(variant != '' && $scope.taskRunsOnVariant(allVariantTask, variant)){
+              $scope.
+            }
+          }
+        })
+      },
+      true // does a deep watch on the array.
+    )
+    */
 
     var allTasksModels = [];
     var allTasksModelsOriginal = [];
@@ -93,6 +136,10 @@ function PatchController($scope, $filter, $window, notificationService) {
   };
   $scope.setPatchInfo();
 
+  $scope.getAllVariantsVariant = function(){
+    return $scope.selectedTasksByVariant['']
+  }
+
   $scope.selectedVariants = function() {
     return $filter('filter')($scope.allVariants, {
       checked: true
@@ -115,6 +162,9 @@ function PatchController($scope, $filter, $window, notificationService) {
   };
 
   $scope.taskRunsOnVariant = function(taskName, variant) {
+    if(variant == ''){  // used for the "all variants" pseudo-variant.
+      return true
+    }
     // Does this task name run on the variant with the given name?
     return ($scope.buildVariantsForTask[taskName] || []).indexOf(variant) != -1;
   };
