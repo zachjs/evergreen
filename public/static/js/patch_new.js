@@ -4,19 +4,39 @@ function PatchController($scope, $filter, $window, notificationService) {
 
   $scope.ALL_VARIANTS_KEY = 'ALL'
 
-  $scope.selectedVariant = {
-    v: "",
-    get: function() {
-      return $scope.selectedVariant.v;
-    },
-    set: function(val) {
-      $scope.selectedVariant.v = val;
+  $scope.selectVariant = function($event, index){
+    $event.preventDefault()
+    if ($event.ctrlKey || $event.metaKey) {
+      // Ctrl/Meta+Click: Toggle just the variant being clicked.
+      $scope.allVariants[index].checked = !$scope.allVariants[index].checked
+    } else if ($event.shiftKey) {
+      // Shift+Click: Select everything between the first element 
+      // that's already selected element and the element being clicked on.
+      var firstCheckedIndex = _.findIndex($scope.allVariants, function(x){ return x.checked })
+      firstCheckedIndex = Math.max(firstCheckedIndex, 0) // if nothing selected yet, start at 0.
+      for(var i=firstCheckedIndex; i<=index; i++){
+        $scope.allVariants[i].checked = true
+      }
+    } else {
+      // Regular click: Select *only* the one being clicked, and unselect all others.
+      for(var i=0; i<$scope.allVariants.length;i++){
+        $scope.allVariants[i].checked = (i == index)
+      }
     }
-  };
-
-  $scope.xxx = function(){
-    console.log(arguments)
   }
+
+  $scope.getActiveTasks = function(variants){
+    // look at the set of variants that are chosen
+    var selectedVariants = _.filter(variants, function(x){ return x.checked })
+
+    // return the union of the set of tasks shared by all of them, sorted by name
+    var tasksInSelectedVariants = _.uniq(_.flatten(_.pluck(selectedVariants, "tasks")))
+    return tasksInSelectedVariants.sort()
+  }
+
+  //$scope.xxx = function(){
+    //console.log(arguments)
+  //}
   
   $scope.numSetForVariant = function(variantId){
     return _.values($scope.selectedTasksByVariant[variantId]).filter(function(x){return x}).length || undefined
@@ -28,42 +48,35 @@ function PatchController($scope, $filter, $window, notificationService) {
     $scope.patchContainer = {'Patch':$scope.patch}
     var patch = $scope.patch;
 
+    var rawVariants = $window.variants
     var allTasks = _.sortBy($window.tasks, 'Name')
-    var allVariants = $window.variants;
+    var allVariants = [];
 
     var selectedTasksByVariant = {}
     console.log(selectedTasksByVariant)
 
     var allVariantsModels = [];
     var allVariantsModelsOriginal = [];
-    for (var variantId in allVariants) {
+    for (var variantId in rawVariants) {
       var variant = {
-        "name": allVariants[variantId].DisplayName,
+        "name": rawVariants[variantId].DisplayName,
         "id": variantId,
-        "tasks": _.map(allVariants[variantId].Tasks, function(task) {
+        "checked": false,
+        "tasks": _.map(rawVariants[variantId].Tasks, function(task) {
           return task.Name;
         })
       };
-      if ($.inArray(variant.id, patch.BuildVariants) >= 0)  {
-        variant.checked = true;
-      }
-      allVariantsModels.push(variant);
-      allVariantsModelsOriginal.push(_.clone(variant));
+      allVariants.push(variant)
     }
 
+/*
     _.each(allVariantsModelsOriginal, function(x){
       selectedTasksByVariant[x.id] = {}
       _.each(allTasks, function(y){
         selectedTasksByVariant[x.id][y.Name] = false
       })
     })
-
-    // populate a special "all variants" variant
-    // that has all the tasks under key ''.
-    selectedTasksByVariant[''] = {};
-    allTasks.forEach(function(x){
-      selectedTasksByVariant[''][x.Name] = false
-    });
+    */
 
     $scope.selectedTasksByVariant = selectedTasksByVariant
     console.log(selectedTasksByVariant)
@@ -113,9 +126,10 @@ function PatchController($scope, $filter, $window, notificationService) {
     }
     $scope.allTasks = allTasksModels;
     $scope.allTasksOriginal = allTasksModelsOriginal;
-    $scope.allVariants = allVariantsModels;
+    $scope.allVariants = allVariants;
     $scope.allVariantsOriginal = allVariantsModelsOriginal;
 
+  /*
     $scope.$watch('allVariants', function(allVariants) {
       $scope.variantsCount = 0;
       _.forEach(allVariants, function(item) {
@@ -124,6 +138,7 @@ function PatchController($scope, $filter, $window, notificationService) {
         }
       });
     }, true);
+    */
 
     $scope.$watch('allTasks', function(allTasks) {
       $scope.taskCount = 0;
@@ -139,12 +154,6 @@ function PatchController($scope, $filter, $window, notificationService) {
   $scope.getAllVariantsVariant = function(){
     return $scope.selectedTasksByVariant['']
   }
-
-  $scope.selectedVariants = function() {
-    return $filter('filter')($scope.allVariants, {
-      checked: true
-    });
-  };
 
   $scope.selectedTasks = function() {
     return $filter('filter')($scope.allTasks, {
@@ -177,12 +186,7 @@ function PatchUpdateController($scope, $http) {
       tasks: [],
       description: $scope.patch.Description
     };
-    var selectedVariants = $scope.selectedVariants();
     var selectedTasks = $scope.selectedTasks();
-
-    for (var i = 0; i < selectedVariants.length; ++i) {
-      data.variants.push(selectedVariants[i].id);
-    }
 
     for (var i = 0; i < selectedTasks.length; ++i) {
       data.tasks.push(selectedTasks[i].Name);

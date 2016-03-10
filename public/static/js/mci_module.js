@@ -9,6 +9,7 @@ var mciModule = angular.module('MCI', [
   'directives.patch',
   'directives.spawn',
   'directives.events',
+  'directives.tristateCheckbox',
   'directives.svg',
   'directives.confirm',
   'mciServices.rest',
