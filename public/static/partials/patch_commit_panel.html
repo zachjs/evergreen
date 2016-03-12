@@ -1,6 +1,6 @@
 <div class="patch">
   <span class="one-liner patch-header">
-    <span class="muted">Patch by</span>
+    <span class="muted">By</span>
     <a href="/patches/user/[[patchinfo.Patch.Author]]">[[patchinfo.Patch.Author]]</a>
     <span class="muted">at [[patchinfo.Patch.CreateTime | convertDateToUserTimezone:timezone:"MMM D, YYYY h:mm:ss a"]]</span>
   </span>
@@ -25,7 +25,7 @@
       <div class="patch-iterator" ng-repeat="patch in patchinfo.Patch.Patches">
         <div class="patch-message patch-changes-line">
           <span ng-show="patch.ModuleName">Changes on [[patch.ModuleName]] module:</span>
-          <span ng-show="!patch.ModuleName">Changes on [[patchinfo.Patch.Project]] project:</span>
+          <span ng-show="!patch.ModuleName">Changes on [[patchinfo.Patch.Project]]:</span>
           <span class="pull-right">
             View Diff:
             <a ng-href="/filediff/[[patchinfo.Patch.Id]]?patch_number=[[$index]]">HTML</a>

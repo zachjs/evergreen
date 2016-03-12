@@ -252,8 +252,7 @@ func (as *APIServer) submitPatch(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// update variant and tasks to include dependencies
-	patchDoc.BuildVariants, patchDoc.Tasks = model.IncludePatchDependencies(
-		project, buildVariants, tasks)
+	patchDoc.BuildVariants, patchDoc.Tasks = model.IncludePatchDependencies(project, buildVariants, tasks)
 
 	if err = patchDoc.Insert(); err != nil {
 		as.LoggedError(w, r, http.StatusInternalServerError, fmt.Errorf("error inserting patch: %v", err))
