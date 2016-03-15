@@ -9,6 +9,7 @@ import (
 	"github.com/evergreen-ci/evergreen/model/version"
 	"github.com/evergreen-ci/evergreen/plugin"
 	"github.com/evergreen-ci/evergreen/util"
+	"github.com/gorilla/mux"
 	"net/http"
 )
 
@@ -244,4 +245,18 @@ func (uis *UIServer) versionHistory(w http.ResponseWriter, r *http.Request) {
 		versionAsUI.Builds = uiBuilds
 	}
 	uis.WriteJSON(w, http.StatusOK, versions)
+}
+func (uis *UIServer) versionFind(w http.ResponseWriter, r *http.Request) {
+	projCtx := MustHaveProjectContext(r)
+	var err error
+	projCtx.Version, err = version.FindOne(version.ByProjectIdAndRevision(mux.Vars(r)["project_id"], mux.Vars(r)["revision"]))
+	if err != nil {
+		uis.LoggedError(w, r, http.StatusInternalServerError, err)
+		return
+	}
+	if projCtx.Version == nil {
+		uis.WriteJSON(w, http.StatusBadRequest, fmt.Sprintf("Version Not Found: %v - %v", mux.Vars(r)["project_id"], mux.Vars(r)["revision"]))
+		return
+	}
+	http.Redirect(w, r, fmt.Sprintf("/version/%v", projCtx.Version.Id), http.StatusFound)
 }
