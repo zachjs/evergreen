@@ -247,16 +247,16 @@ func (uis *UIServer) versionHistory(w http.ResponseWriter, r *http.Request) {
 	uis.WriteJSON(w, http.StatusOK, versions)
 }
 func (uis *UIServer) versionFind(w http.ResponseWriter, r *http.Request) {
-	projCtx := MustHaveProjectContext(r)
-	var err error
-	projCtx.Version, err = version.FindOne(version.ByProjectIdAndRevision(mux.Vars(r)["project_id"], mux.Vars(r)["revision"]))
+	id := mux.Vars(r)["project_id"]
+	revision := mux.Vars(r)["revision"]
+	foundVersion, err := version.FindOne(version.ByProjectIdAndRevision(id, revision))
 	if err != nil {
 		uis.LoggedError(w, r, http.StatusInternalServerError, err)
 		return
 	}
-	if projCtx.Version == nil {
-		uis.WriteJSON(w, http.StatusBadRequest, fmt.Sprintf("Version Not Found: %v - %v", mux.Vars(r)["project_id"], mux.Vars(r)["revision"]))
+	if foundVersion == nil {
+		uis.WriteJSON(w, http.StatusBadRequest, fmt.Sprintf("Version Not Found: %v - %v", id, revision))
 		return
 	}
-	http.Redirect(w, r, fmt.Sprintf("/version/%v", projCtx.Version.Id), http.StatusFound)
+	http.Redirect(w, r, fmt.Sprintf("/version/%v", foundVersion.Id), http.StatusFound)
 }
