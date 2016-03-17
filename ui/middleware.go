@@ -158,37 +158,22 @@ func (uis *UIServer) requireSuperUser(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-func (uis *UIServer) requireCanEditPatch(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		patchId := mux.Vars(r)["patch_id"]
-		curPatch, err := patch.FindOne(patch.ById(patch.NewId(patchId)))
-		if err != nil {
-			// Some database lookup failed when fetching the data - log it
-			uis.LoggedError(w, r, http.StatusInternalServerError, fmt.Errorf("Error loading patch: %v", err))
-			return
-		}
-
-		if len(uis.Settings.SuperUsers) == 0 { // All users are superusers (default)
-			f := uis.requireUser(next) // Still must be user to proceed
-			f(w, r)
-			return
-		}
-
-		if user := GetUser(r); user != nil {
-			if user.Id == curPatch.Author {
-				next(w, r)
-				return
-			}
-			for _, id := range uis.Settings.SuperUsers {
-				if id == user.Id {
-					next(w, r)
-					return
-				}
-			}
-		}
-		uis.LoggedError(w, r, http.StatusUnauthorized, fmt.Errorf("Unauthorized attempt to edit patch"))
-		return
+func (uis *UIServer) canEditPatch(currentUser *user.DBUser, currentPatch *patch.Patch) bool {
+	if currentUser == nil {
+		return false
 	}
+	if len(uis.Settings.SuperUsers) == 0 { // All users are superusers (default)
+		return true
+	}
+	if currentUser.Id == currentPatch.Author {
+		return true
+	}
+	for _, id := range uis.Settings.SuperUsers {
+		if id == currentUser.Id {
+			return true
+		}
+	}
+	return false
 }
 
 // RedirectToLogin forces a redirect to the login page. The redirect param is set on the query

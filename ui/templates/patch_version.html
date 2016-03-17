@@ -6,6 +6,7 @@
   var variants = {{.Variants}}
   var tasks = {{.Tasks}}
   var patch= {{.ProjectData.Patch}}
+  var canEdit= {{.CanEdit}}
 </script>
 {{end}}
 
@@ -117,7 +118,7 @@ Evergreen - Configure Patch
       </div>
       <div class="row" ng-show="true" style="padding-bottom:10px">
         <div class="col-lg-3 col-lg-offset-3">
-          <div ng-click="scheduleBuilds(variantsTasksForm)" class="btn btn-primary btn-large" ng-disabled="variantsCount == 0">
+          <div ng-click="scheduleBuilds(variantsTasksForm)" class="btn btn-primary btn-large" ng-disabled="variantsCount == 0 || !canEdit">
             Schedule Builds Now
             <br/>
             <span style="font-size:.7em;">
