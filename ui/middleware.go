@@ -158,6 +158,8 @@ func (uis *UIServer) requireSuperUser(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// canEditPatch verifies that a user has permission to edit the given patch.
+// A user has permission if they are a superuser, or if they are the author of the patch.
 func (uis *UIServer) canEditPatch(currentUser *user.DBUser, currentPatch *patch.Patch) bool {
 	if currentUser == nil {
 		return false
