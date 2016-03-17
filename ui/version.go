@@ -247,8 +247,8 @@ func (uis *UIServer) versionHistory(w http.ResponseWriter, r *http.Request) {
 	uis.WriteJSON(w, http.StatusOK, versions)
 }
 
-//versionFind redirects to the correct version page based on the gitHash and versionId given
-//It finds the version associated with the versionId and gitHash and redirects to /version/{version_id}
+//versionFind redirects to the correct version page based on the gitHash and versionId given.
+//It finds the version associated with the versionId and gitHash and redirects to /version/{version_id}.
 func (uis *UIServer) versionFind(w http.ResponseWriter, r *http.Request) {
 	id := mux.Vars(r)["project_id"]
 	revision := mux.Vars(r)["revision"]
@@ -258,7 +258,7 @@ func (uis *UIServer) versionFind(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if foundVersion == nil {
-		uis.WriteJSON(w, http.StatusBadRequest, fmt.Sprintf("Version Not Found: %v - %v", id, revision))
+		uis.WriteJSON(w, http.StatusNotFound, fmt.Sprintf("Version Not Found: %v - %v", id, revision))
 		return
 	}
 	http.Redirect(w, r, fmt.Sprintf("/version/%v", foundVersion.Id), http.StatusFound)
