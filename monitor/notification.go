@@ -128,7 +128,6 @@ func spawnHostExpirationWarnings(settings *evergreen.Settings) ([]notification,
 				return h.SetExpirationNotification(thresholdKey)
 			},
 		}
-		fmt.Printf("Notification %#v\n", hostNotification)
 
 		// add it to the list
 		warnings = append(warnings, hostNotification)
