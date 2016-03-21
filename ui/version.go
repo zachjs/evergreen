@@ -87,6 +87,7 @@ func (uis *UIServer) versionPage(w http.ResponseWriter, r *http.Request) {
 	pluginContext := projCtx.ToPluginContext(uis.Settings, GetUser(r))
 	pluginContent := getPluginDataAndHTML(uis, plugin.VersionPage, pluginContext)
 
+	currentUser := GetUser(r)
 	flashes := PopFlashes(uis.CookieStore, r, w)
 	uis.WriteHTML(w, http.StatusOK, struct {
 		ProjectData   projectContext
@@ -94,7 +95,8 @@ func (uis *UIServer) versionPage(w http.ResponseWriter, r *http.Request) {
 		Flashes       []interface{}
 		Version       *uiVersion
 		PluginContent pluginData
-	}{projCtx, GetUser(r), flashes, &versionAsUI, pluginContent}, "base",
+		CanEdit       bool
+	}{projCtx, GetUser(r), flashes, &versionAsUI, pluginContent, uis.canEditPatch(currentUser, projCtx.Patch)}, "base",
 		"version.html", "base_angular.html", "menu.html")
 }
 

@@ -59,9 +59,9 @@ Evergreen - Configure Patch
                       mci-mouseleave="selectedVariant.set('')">
                     <div  class="highlight-wrapper"
                           ng-class="{true:'highlight-bg-no-border', false:''}[variantRunsTask(variant, selectedTask.get())]">
-                      <label ng-class="{true:'muted', false:''}[!!patch.Version && allVariantsOriginal[$index].checked]">
+                      <label ng-class="{true:'muted', false:''}[(!!patch.Version && allVariantsOriginal[$index].checked) || !canEdit]">
                         <input  type="checkbox"
-                                ng-disabled="!!patch.Version && allVariantsOriginal[$index].checked"
+                                ng-disabled="(!!patch.Version && allVariantsOriginal[$index].checked) || !canEdit"
                                 ng-checked="variant.checked"
                                 ng-click="toggleCheck(variant)">
                         [[variant.name]]
@@ -93,9 +93,9 @@ Evergreen - Configure Patch
                     mci-mouseleave="selectedTask.set('')">
                   <div  class="highlight-wrapper"
                         ng-class="{true:'highlight-bg-no-border', false:''}[taskRunsOnVariant(task.Name, selectedVariant.get())]">
-                    <label ng-class="{true:'muted', false:''}[!!patch.Version && allTasksOriginal[$index].checked]">
+                    <label ng-class="{true:'muted', false:''}[(!!patch.Version && allVariantsOriginal[$index].checked) || !canEdit]">
                       <input  type="checkbox"
-                              ng-disabled="!!patch.Version && allTasksOriginal[$index].checked"
+                              ng-disabled="(!!patch.Version && allVariantsOriginal[$index].checked) || !canEdit"
                               ng-checked="task.checked"
                               ng-click="toggleCheck(task)">
                       [[task.Name]]

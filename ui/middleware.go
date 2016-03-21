@@ -144,14 +144,9 @@ func (uis *UIServer) requireSuperUser(next http.HandlerFunc) http.HandlerFunc {
 			f(w, r)
 			return
 		}
-
-		if user := GetUser(r); user != nil {
-			for _, id := range uis.Settings.SuperUsers {
-				if id == user.Id {
-					next(w, r)
-					return
-				}
-			}
+		if uis.isSuperUser(GetUser(r)) {
+			next(w, r)
+			return
 		}
 		uis.RedirectToLogin(w, r)
 		return
@@ -161,21 +156,26 @@ func (uis *UIServer) requireSuperUser(next http.HandlerFunc) http.HandlerFunc {
 // canEditPatch verifies that a user has permission to edit the given patch.
 // A user has permission if they are a superuser, or if they are the author of the patch.
 func (uis *UIServer) canEditPatch(currentUser *user.DBUser, currentPatch *patch.Patch) bool {
-	if currentUser == nil {
+	return currentUser.Id == currentPatch.Author || uis.isSuperUser(currentUser)
+}
+
+// isSuperUser verifies that a given user has super user permissions.
+// A user has these permission if they are in the super users list or if the list is empty,
+// in which case all users are super users.
+func (uis *UIServer) isSuperUser(u *user.DBUser) bool {
+	if u == nil {
 		return false
 	}
 	if len(uis.Settings.SuperUsers) == 0 { // All users are superusers (default)
 		return true
 	}
-	if currentUser.Id == currentPatch.Author {
-		return true
-	}
 	for _, id := range uis.Settings.SuperUsers {
-		if id == currentUser.Id {
+		if id == u.Id {
 			return true
 		}
 	}
 	return false
+
 }
 
 // RedirectToLogin forces a redirect to the login page. The redirect param is set on the query
