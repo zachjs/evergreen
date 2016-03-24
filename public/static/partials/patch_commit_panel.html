@@ -10,6 +10,10 @@
     <a class="base-link" ng-href="[[baselink]]/[[base]]">[[basecommit.gitspec.substr(0, 10)]]</a>
   </div>
 
+  <div class="description-box" ng-show="!hideDescription && patchinfo.Patch.Description != ''">  
+    <p>[[patchinfo.Patch.Description]]</p>  
+  </div>
+
   <div class="patch" ng-init="showAllChanges = false;">
     <div ng-click="showAllChanges = !showAllChanges" class="pointer semi-muted">
       <i class="fa" ng-class="showAllChanges | conditional:'fa-caret-down':'fa-caret-right'"></i>
