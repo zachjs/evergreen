@@ -1,8 +1,6 @@
-function PatchController($scope, $filter, $window, notificationService) {
+mciModule.controller('PatchController', function($scope, $filter, $window, notificationService) {
   $scope.userTz = $window.userTz;
   $scope.canEdit = $window.canEdit;
-
-  $scope.ALL_VARIANTS_KEY = 'ALL'
 
   $scope.selectVariant = function($event, index){
     $event.preventDefault()
@@ -14,7 +12,10 @@ function PatchController($scope, $filter, $window, notificationService) {
       // that's already selected element and the element being clicked on.
       var firstCheckedIndex = _.findIndex($scope.allVariants, function(x){ return x.checked })
       firstCheckedIndex = Math.max(firstCheckedIndex, 0) // if nothing selected yet, start at 0.
-      for(var i=firstCheckedIndex; i<=index; i++){
+      var indexBounds = Array(firstCheckedIndex, index).sort(function(a, b){
+        return a-b;
+      })
+      for(var i=indexBounds[0]; i<=indexBounds[1]; i++){
         $scope.allVariants[i].checked = true
       }
     } else {
@@ -34,10 +35,6 @@ function PatchController($scope, $filter, $window, notificationService) {
     return tasksInSelectedVariants.sort()
   }
 
-  //$scope.xxx = function(){
-    //console.log(arguments)
-  //}
-  
   $scope.numSetForVariant = function(variantId){
     return _.values($scope.selectedTasksByVariant[variantId]).filter(function(x){return x}).length || undefined
   }
@@ -53,7 +50,6 @@ function PatchController($scope, $filter, $window, notificationService) {
     var allVariants = [];
 
     var selectedTasksByVariant = {}
-    console.log(selectedTasksByVariant)
 
     var allVariantsModels = [];
     var allVariantsModelsOriginal = [];
@@ -68,15 +64,6 @@ function PatchController($scope, $filter, $window, notificationService) {
       };
       allVariants.push(variant)
     }
-
-/*
-    _.each(allVariantsModelsOriginal, function(x){
-      selectedTasksByVariant[x.id] = {}
-      _.each(allTasks, function(y){
-        selectedTasksByVariant[x.id][y.Name] = false
-      })
-    })
-    */
 
     $scope.selectedTasksByVariant = selectedTasksByVariant
     console.log(selectedTasksByVariant)
@@ -93,26 +80,6 @@ function PatchController($scope, $filter, $window, notificationService) {
         }
       });
     });
-
-    // Whenever the user makes changes to the "all variants" variant,
-    // go back and update the selections on the normal variants.
-    /*
-    $scope.$watch(
-      function($scope){
-        return $scope.selectedTasksByVariant['']
-      },
-      function(oldVal, newVal){
-        _.each($scope.selectedTasksByVariant[''], function(allVariantTask, activated){
-          _.each($scope.selectedTasksByVariant, function(variant, tasks){
-            if(variant != '' && $scope.taskRunsOnVariant(allVariantTask, variant)){
-              $scope.
-            }
-          }
-        })
-      },
-      true // does a deep watch on the array.
-    )
-    */
 
     var allTasksModels = [];
     var allTasksModelsOriginal = [];
@@ -177,7 +144,7 @@ function PatchController($scope, $filter, $window, notificationService) {
     // Does this task name run on the variant with the given name?
     return ($scope.buildVariantsForTask[taskName] || []).indexOf(variant) != -1;
   };
-}
+})
 
 function PatchUpdateController($scope, $http) {
   $scope.scheduleBuilds = function(form) {
