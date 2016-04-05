@@ -370,21 +370,21 @@ func NewTaskIdTable(p *Project, v *version.Version) TaskIdTable {
 
 func NewPatchTaskIdTable(proj *Project, v *version.Version, patch *patch.Patch) TaskIdTable {
 	table := TaskIdTable{}
-	for _, bv := range patch.BuildVariants {
+	for _, vt := range patch.VariantsTasks {
 		// we must track the project's variants definitions as well,
 		// so that we don't create Ids for variants that don't exist.
-		projBV := proj.FindBuildVariant(bv)
+		projBV := proj.FindBuildVariant(vt.Variant)
 		if projBV.Disabled {
 			continue
 		}
 		for _, t := range projBV.Tasks {
 			// create Ids for each task that can run on the variant and is requested by the patch.
-			if util.SliceContains(patch.Tasks, t.Name) {
+			if util.SliceContains(vt.Tasks, t.Name) {
 				taskId := util.CleanName(
 					fmt.Sprintf("%v_%v_%v_%v_%v",
 						proj.Identifier, projBV.Name, t.Name, v.Revision,
 						v.CreateTime.Format(build.IdTimeLayout)))
-				table[TVPair{bv, t.Name}] = taskId
+				table[TVPair{vt.Variant, t.Name}] = taskId
 			}
 		}
 	}

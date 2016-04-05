@@ -11,6 +11,13 @@ import (
 	"strconv"
 )
 
+type patchVariantsTasksRequest struct {
+	VariantsTasks []patch.VariantTasks `json:"variants_tasks"` // new format
+	Variants      []string             `json:"variants"`       // old format
+	Tasks         []string             `json:"tasks"`          // old format
+	Description   string               `json:"description"`
+}
+
 func (uis *UIServer) patchPage(w http.ResponseWriter, r *http.Request) {
 	projCtx := MustHaveProjectContext(r)
 	if projCtx.Patch == nil {
@@ -94,11 +101,7 @@ func (uis *UIServer) schedulePatch(w http.ResponseWriter, r *http.Request) {
 	}
 	projCtx.Project = project
 
-	patchUpdateReq := struct {
-		Variants    []string `json:"variants"`
-		Tasks       []string `json:"tasks"`
-		Description string   `json:"description"`
-	}{}
+	var patchUpdateReq patchVariantsTasksRequest
 
 	err = util.ReadJSONInto(r.Body, &patchUpdateReq)
 	if err != nil {
@@ -106,8 +109,17 @@ func (uis *UIServer) schedulePatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	patchUpdateReq.Variants, patchUpdateReq.Tasks = model.IncludePatchDependencies(
-		projCtx.Project, patchUpdateReq.Variants, patchUpdateReq.Tasks)
+	var pairs []model.TVPair
+	if len(patchUpdateReq.VariantsTasks) > 0 {
+		pairs = model.VariantTasksToTVPairs(patchUpdateReq.VariantsTasks)
+	} else {
+		for _, v := range patchUpdateReq.Variants {
+			for _, t := range patchUpdateReq.Tasks {
+				pairs = append(pairs, model.TVPair{v, t})
+			}
+		}
+	}
+	pairs = model.IncludePatchDependencies(projCtx.Project, pairs)
 
 	// update the description for both reconfigured and new patches
 	if err = projCtx.Patch.SetDescription(patchUpdateReq.Description); err != nil {
@@ -147,7 +159,7 @@ func (uis *UIServer) schedulePatch(w http.ResponseWriter, r *http.Request) {
 			VersionId string `json:"version"`
 		}{projCtx.Version.Id})
 	} else {
-		err = projCtx.Patch.SetVariantsAndTasks(patchUpdateReq.Variants, patchUpdateReq.Tasks)
+		err = projCtx.Patch.SetVariantsTasks(patchUpdateReq.VariantsTasks)
 		if err != nil {
 			uis.LoggedError(w, r, http.StatusInternalServerError,
 				fmt.Errorf("Error setting patch variants and tasks: %v", err))

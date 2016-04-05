@@ -19,6 +19,39 @@ import (
 	"time"
 )
 
+// Given the set of variants and tasks (from both the old and new request formats)
+// build a universal set of pairs that can be used to expand the dependency tree.
+func VariantTasksToTVPairs(in []patch.VariantTasks) []TVPair {
+	out := []TVPair{}
+	for _, vt := range in {
+		for _, t := range vt.Tasks {
+			out = append(out, TVPair{vt.Variant, t})
+		}
+	}
+	return out
+}
+
+func TVPairsToVariantTasks(in []TVPair) []patch.VariantTasks {
+	vtMap := map[string]patch.VariantTasks{}
+	for _, pair := range in {
+		vt := vtMap[pair.Variant]
+		vt.Variant = pair.Variant
+		vt.Tasks = append(vt.Tasks, pair.TaskName)
+		vtMap[pair.Variant] = vt
+	}
+	vts := make([]patch.VariantTasks, len(vtMap))
+	for _, vt := range vtMap {
+		vts = append(vts, vt)
+	}
+	return vts
+}
+
+// UpdatePatch creates the full set of tasks and variants defined in newPairs
+func UpdatePatch(p *patch.Patch, newPairs []TVPair) error {
+	oldPairs := p.
+	return nil
+}
+
 // Given a patch version and a list of task names, creates a new task with
 // the given name for each variant, if applicable.
 func AddNewTasksForPatch(p *patch.Patch, patchVersion *version.Version, project *Project,
@@ -52,6 +85,12 @@ func AddNewTasksForPatch(p *patch.Patch, patchVersion *version.Version, project 
 	return nil
 }
 
+/*
+func UpdatePatchConfig(p *patch.Patch, pairs []TVPair) error {
+
+}
+*/
+
 // Given the patch version and a list of build variants, creates new builds
 // with the patch's tasks.
 func AddNewBuildsForPatch(p *patch.Patch, patchVersion *version.Version, project *Project,
@@ -77,8 +116,7 @@ func AddNewBuildsForPatch(p *patch.Patch, patchVersion *version.Version, project
 		evergreen.Logger.Logf(slogger.INFO,
 			"Creating build for version %v, buildVariant %v, activated = %v",
 			patchVersion.Id, buildVariant, p.Activated)
-		buildId, err := CreateBuildFromVersion(
-			project, patchVersion, tt, buildVariant, p.Activated, p.Tasks)
+		buildId, err := CreateBuildFromVersion(project, patchVersion, tt, buildVariant, p.Activated, p.Tasks)
 		if err != nil {
 			return nil, err
 		}
@@ -110,15 +148,13 @@ func AddNewBuildsForPatch(p *patch.Patch, patchVersion *version.Version, project
 	return patchVersion, nil
 }
 
-// IncludePatchDependencies takes a project, slice of variant names, and a slice of task names,
-// and returns expanded lists of variants and tasks to include dependencies of the given tasks.
-// If a dependency is cross-variant, it will include the variant and task for that dependency.
-func IncludePatchDependencies(project *Project, variants, tasks []string) (vs, ts []string) {
-	// Construct a set of variants to include in patchUpdate.Variants
-	di := &dependencyIncluder{
-		Project: project,
-	}
-	return di.Include(variants, tasks)
+// IncludePatchDependencies takes a project and a slice of variant/task pairs names
+// and returns the expanded set of variant/task pairs to include all the dependencies/requirements
+// for the given set of tasks.
+// If any dependency is cross-variant, it will include the variant and task for that dependency.
+func IncludePatchDependencies(project *Project, tvpairs []TVPair) []TVPair {
+	di := &dependencyIncluder{Project: project}
+	return di.Include(tvpairs)
 }
 
 // MakePatchedConfig takes in the path to a remote configuration a stringified version
@@ -209,11 +245,10 @@ func MakePatchedConfig(p *patch.Patch, remoteConfigPath, projectConfig string) (
 // Patches a remote project's configuration file if needed.
 // Creates a version for this patch and links it.
 // Creates builds based on the version.
-func FinalizePatch(p *patch.Patch, settings *evergreen.Settings) (
-	patchVersion *version.Version, err error) {
+func FinalizePatch(p *patch.Patch, settings *evergreen.Settings) (*version.Version, error) {
 	// unmarshal the project YAML for storage
 	project := &Project{}
-	err = yaml.Unmarshal([]byte(p.PatchedConfig), project)
+	err := yaml.Unmarshal([]byte(p.PatchedConfig), project)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"Error marshalling patched project config from repository revision “%v”: %v",
@@ -222,7 +257,7 @@ func FinalizePatch(p *patch.Patch, settings *evergreen.Settings) (
 
 	projectRef, err := FindOneProjectRef(p.Project)
 	if err != nil {
-		return
+		return nil, err
 	}
 
 	gitCommit, err := thirdparty.GetCommitEvent(
@@ -233,11 +268,10 @@ func FinalizePatch(p *patch.Patch, settings *evergreen.Settings) (
 		return nil, fmt.Errorf("Couldn't fetch commit information: %v", err)
 	}
 	if gitCommit == nil {
-		return nil, fmt.Errorf("Couldn't fetch commit information: git commit" +
-			" doesn't exist?")
+		return nil, fmt.Errorf("Couldn't fetch commit information: git commit doesn't exist?")
 	}
 
-	patchVersion = &version.Version{
+	patchVersion := &version.Version{
 		Id:            fmt.Sprintf("%v_%v", p.Id.Hex(), 0),
 		CreateTime:    time.Now(),
 		Identifier:    p.Project,
@@ -253,15 +287,15 @@ func FinalizePatch(p *patch.Patch, settings *evergreen.Settings) (
 	}
 
 	tt := NewPatchTaskIdTable(project, patchVersion, p)
-	for _, buildvariant := range p.BuildVariants {
-		buildId, err := CreateBuildFromVersion(project, patchVersion, tt, buildvariant, true, p.Tasks)
+	for _, vt := range p.VariantsTasks {
+		buildId, err := CreateBuildFromVersion(project, patchVersion, tt, vt.Variant, true, vt.Tasks)
 		if err != nil {
 			return nil, err
 		}
 		patchVersion.BuildIds = append(patchVersion.BuildIds, buildId)
 		patchVersion.BuildVariants = append(patchVersion.BuildVariants,
 			version.BuildStatus{
-				BuildVariant: buildvariant,
+				BuildVariant: vt.Variant,
 				Activated:    true,
 				BuildId:      buildId,
 			},
