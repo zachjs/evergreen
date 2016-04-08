@@ -7,7 +7,6 @@ import (
 	"github.com/evergreen-ci/evergreen/db/bsonutil"
 	"github.com/evergreen-ci/evergreen/model/build"
 	"github.com/evergreen-ci/evergreen/model/distro"
-	"github.com/evergreen-ci/evergreen/model/patch"
 	"github.com/evergreen-ci/evergreen/model/task"
 	"github.com/evergreen-ci/evergreen/model/version"
 	"github.com/evergreen-ci/evergreen/util"
@@ -300,7 +299,40 @@ type TVPair struct {
 	TaskName string
 }
 
-// String returns the pair's name in a readible form.
+type TVPairSet []TVPair
+
+// ForVariant returns a list of TVPairs filtered to include only those
+// for the given variant
+func (tvps TVPairSet) ByVariant(variant string) TVPairSet {
+	r := []TVPair{}
+	for _, pair := range tvps {
+		if pair.Variant != variant {
+			continue
+		}
+		r = append(r, pair)
+	}
+	return TVPairSet(r)
+}
+
+func (tvps TVPairSet) TaskNames(variant string) []string {
+	taskSet := map[string]bool{}
+	taskNames := []string{}
+	for _, pair := range tvps {
+		// skip over any pairs that aren't for the given variant
+		if pair.Variant != variant {
+			continue
+		}
+		// skip over tasks we already picked up
+		if _, ok := taskSet[pair.TaskName]; ok {
+			continue
+		}
+		taskSet[pair.TaskName] = true
+		taskNames = append(taskNames, pair.TaskName)
+	}
+	return taskNames
+}
+
+// String returns the pair's name in a readable form.
 func (p TVPair) String() string {
 	return fmt.Sprintf("%v/%v", p.Variant, p.TaskName)
 }
@@ -368,23 +400,37 @@ func NewTaskIdTable(p *Project, v *version.Version) TaskIdTable {
 	return table
 }
 
-func NewPatchTaskIdTable(proj *Project, v *version.Version, patch *patch.Patch) TaskIdTable {
+func NewPatchTaskIdTable(proj *Project, v *version.Version, patchConfig TVPairSet) TaskIdTable {
 	table := TaskIdTable{}
-	for _, vt := range patch.VariantsTasks {
+	processedVariants := map[string]bool{}
+	fmt.Println("len of patchconfig", len(patchConfig))
+	for _, vt := range patchConfig {
+		// don't hit the same variant more than once
+		if _, ok := processedVariants[vt.Variant]; ok {
+			continue
+		}
+		fmt.Println("in table. processing variant", vt.Variant)
+		processedVariants[vt.Variant] = true
 		// we must track the project's variants definitions as well,
 		// so that we don't create Ids for variants that don't exist.
 		projBV := proj.FindBuildVariant(vt.Variant)
 		if projBV.Disabled {
+			fmt.Println("it is disabled, skipping")
 			continue
 		}
+		taskNamesForVariant := patchConfig.TaskNames(vt.Variant)
+		fmt.Println("building patch task id table for ", vt.Variant, "got tasks", taskNamesForVariant)
 		for _, t := range projBV.Tasks {
 			// create Ids for each task that can run on the variant and is requested by the patch.
-			if util.SliceContains(vt.Tasks, t.Name) {
+			if util.SliceContains(taskNamesForVariant, t.Name) {
+				fmt.Println("adding id for", t.Name, vt.Variant)
 				taskId := util.CleanName(
 					fmt.Sprintf("%v_%v_%v_%v_%v",
 						proj.Identifier, projBV.Name, t.Name, v.Revision,
 						v.CreateTime.Format(build.IdTimeLayout)))
 				table[TVPair{vt.Variant, t.Name}] = taskId
+			} else {
+				fmt.Println("NOTTT adding id for", t.Name, vt.Variant)
 			}
 		}
 	}

@@ -1,4 +1,4 @@
-mciModule.controller('PatchController', function($scope, $filter, $window, notificationService) {
+mciModule.controller('PatchController', function($scope, $filter, $window, notificationService, $http) {
   $scope.userTz = $window.userTz;
   $scope.canEdit = $window.canEdit;
   var checkedProp = _.property("checked")
@@ -62,16 +62,13 @@ mciModule.controller('PatchController', function($scope, $filter, $window, notif
     }
   }
 
-  /*
-
   $scope.save = function(){
     var data = _.map($scope.variants, function(v){
       return {
         variant: v.id, 
-        tasks: _.keys(_.omit(v.tasks, function(v){return !v.checked}))
-      }
-    ))
-    /*
+        tasks: _.keys(_.omit(v.tasks, function(v){return !v.checked})),
+      };
+    })
     $http.post('/patch/' + $scope.patch.Id, data).
       success(function(data, status) {
         window.location.replace("/version/" + data.version);
@@ -79,9 +76,7 @@ mciModule.controller('PatchController', function($scope, $filter, $window, notif
       error(function(data, status, errorThrown) {
       	notificationService.pushNotification('Error retrieving logs: ' + JSON.stringify(data), 'errorHeader');
       });
-    };
-  }
-  */
+  };
 
   $scope.setPatchInfo = function() {
     $scope.patch = $window.patch;

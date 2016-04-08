@@ -101,9 +101,9 @@ func (uis *UIServer) schedulePatch(w http.ResponseWriter, r *http.Request) {
 	}
 	projCtx.Project = project
 
-	var patchUpdateReq patchVariantsTasksRequest
+	patchUpdateReq := patchVariantsTasksRequest{}
 
-	err = util.ReadJSONInto(r.Body, &patchUpdateReq)
+	err = util.ReadJSONInto(r.Body, &(patchUpdateReq.VariantsTasks))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -129,29 +129,30 @@ func (uis *UIServer) schedulePatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if projCtx.Patch.Version != "" {
+		fmt.Println("doing existing version stuff")
 		// This patch has already been finalized, just add the new builds and tasks
 		if projCtx.Version == nil {
 			uis.LoggedError(w, r, http.StatusInternalServerError,
 				fmt.Errorf("Couldn't find patch for id %v", projCtx.Patch.Version))
 			return
 		}
+
+		fmt.Println("adding new tasks")
+		fmt.Println("pairs is", pairs)
 		// First add new tasks to existing builds, if necessary
-		if len(patchUpdateReq.Tasks) > 0 {
-			err = model.AddNewTasksForPatch(projCtx.Patch, projCtx.Version, projCtx.Project, patchUpdateReq.Tasks)
-			if err != nil {
-				uis.LoggedError(w, r, http.StatusInternalServerError,
-					fmt.Errorf("Error creating new tasks: `%v` for version `%v`", err, projCtx.Version.Id))
-				return
-			}
+		err = model.AddNewTasksForPatch(projCtx.Patch, projCtx.Version, projCtx.Project, pairs)
+		if err != nil {
+			uis.LoggedError(w, r, http.StatusInternalServerError,
+				fmt.Errorf("Error creating new tasks: `%v` for version `%v`", err, projCtx.Version.Id))
+			return
 		}
 
-		if len(patchUpdateReq.Variants) > 0 {
-			_, err := model.AddNewBuildsForPatch(projCtx.Patch, projCtx.Version, projCtx.Project, patchUpdateReq.Variants)
-			if err != nil {
-				uis.LoggedError(w, r, http.StatusInternalServerError,
-					fmt.Errorf("Error creating new builds: `%v` for version `%v`", err, projCtx.Version.Id))
-				return
-			}
+		fmt.Println("addig new builds for patch")
+		err := model.AddNewBuildsForPatch(projCtx.Patch, projCtx.Version, projCtx.Project, pairs)
+		if err != nil {
+			uis.LoggedError(w, r, http.StatusInternalServerError,
+				fmt.Errorf("Error creating new builds: `%v` for version `%v`", err, projCtx.Version.Id))
+			return
 		}
 
 		PushFlash(uis.CookieStore, r, w, NewSuccessFlash("Builds and tasks successfully added to patch."))
