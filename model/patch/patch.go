@@ -13,6 +13,7 @@ import (
 // Hard limit on patch size.
 const SizeLimit = 1024 * 1024 * 100
 
+// VariantTasks contains the variant ID and  the set of tasks to be scheduled for that variant
 type VariantTasks struct {
 	Variant string
 	Tasks   []string
@@ -99,6 +100,9 @@ func (p *Patch) FetchPatchFiles() error {
 	return nil
 }
 
+// Updates the variant/tasks pairs in the database.
+// Also updates the Tasks and Variants fields to maintain backwards compatibility between
+// the old and new fields.
 func (p *Patch) SetVariantsTasks(variantsTasks []VariantTasks) error {
 	taskSet := map[string]bool{}
 	variantSet := map[string]bool{}
