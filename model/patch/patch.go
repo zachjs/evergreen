@@ -121,6 +121,7 @@ func (p *Patch) SetVariantsTasks(variantsTasks []VariantTasks) error {
 		tasks = append(tasks, k)
 	}
 
+	p.VariantsTasks = variantsTasks
 	p.Tasks = tasks
 	p.BuildVariants = variants
 	return UpdateOne(

@@ -121,6 +121,11 @@ func (uis *UIServer) schedulePatch(w http.ResponseWriter, r *http.Request) {
 	}
 	pairs = model.IncludePatchDependencies(projCtx.Project, pairs)
 
+	if err = model.ValidateTVPairs(projCtx.Project, pairs); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	// update the description for both reconfigured and new patches
 	if err = projCtx.Patch.SetDescription(patchUpdateReq.Description); err != nil {
 		uis.LoggedError(w, r, http.StatusInternalServerError,
@@ -128,8 +133,14 @@ func (uis *UIServer) schedulePatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// update the description for both reconfigured and new patches
+	if err = projCtx.Patch.SetVariantsTasks(model.TVPairsToVariantTasks(pairs)); err != nil {
+		uis.LoggedError(w, r, http.StatusInternalServerError,
+			fmt.Errorf("Error setting description: %v", err))
+		return
+	}
+
 	if projCtx.Patch.Version != "" {
-		fmt.Println("doing existing version stuff")
 		// This patch has already been finalized, just add the new builds and tasks
 		if projCtx.Version == nil {
 			uis.LoggedError(w, r, http.StatusInternalServerError,
@@ -137,8 +148,6 @@ func (uis *UIServer) schedulePatch(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		fmt.Println("adding new tasks")
-		fmt.Println("pairs is", pairs)
 		// First add new tasks to existing builds, if necessary
 		err = model.AddNewTasksForPatch(projCtx.Patch, projCtx.Version, projCtx.Project, pairs)
 		if err != nil {
@@ -147,7 +156,6 @@ func (uis *UIServer) schedulePatch(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		fmt.Println("addig new builds for patch")
 		err := model.AddNewBuildsForPatch(projCtx.Patch, projCtx.Version, projCtx.Project, pairs)
 		if err != nil {
 			uis.LoggedError(w, r, http.StatusInternalServerError,

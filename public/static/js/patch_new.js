@@ -27,6 +27,12 @@ mciModule.controller('PatchController', function($scope, $filter, $window, notif
     }
   }
 
+  $scope.selectionCount = function(){
+    var numVariants = _.filter($scope.variants, function(x){return _.filter(x.tasks, checkedProp).length > 0}).length
+    var numTasks = _.reduce(_.map($scope.variants, function(x){return _.filter(x.tasks, checkedProp).length}), function(x, y){return x+y}, 0)
+    return {numVariants: numVariants, numTasks: numTasks}
+  }
+
   $scope.numSetForVariant = function(variantId){
     var v = _.find($scope.variants, function(x){return x.id == variantId})
     return _.filter(_.pluck(v.tasks, "checked"), _.identity).length
@@ -57,18 +63,20 @@ mciModule.controller('PatchController', function($scope, $filter, $window, notif
         continue;
       }
       _.each(activeTasks, function(taskName){
-        v.tasks[taskName].checked = newValue;
+        if(_.has(v.tasks, taskName)){
+          v.tasks[taskName].checked = state;
+        }
       })
     }
   }
 
   $scope.save = function(){
-    var data = _.map($scope.variants, function(v){
+    var data = _.filter(_.map($scope.variants, function(v){
       return {
         variant: v.id, 
         tasks: _.keys(_.omit(v.tasks, function(v){return !v.checked})),
       };
-    })
+    }), function(v){return v.tasks.length > 0})
     $http.post('/patch/' + $scope.patch.Id, data).
       success(function(data, status) {
         window.location.replace("/version/" + data.version);
@@ -83,7 +91,7 @@ mciModule.controller('PatchController', function($scope, $filter, $window, notif
     $scope.patchContainer = {'Patch':$scope.patch}
     var patch = $scope.patch;
 
-    $scope.variants = _.map($window.variants, function(v, variantId){
+    $scope.variants = _.sortBy(_.map($window.variants, function(v, variantId){
       return {
         id: variantId, 
         checked:false,
@@ -92,7 +100,8 @@ mciModule.controller('PatchController', function($scope, $filter, $window, notif
           return [t, {checked:false}]
         }))
       };
-    })
+    }), "name")
+
 
     var allUniqueTaskNames = _.uniq(_.flatten(_.map(_.pluck($scope.variants, "tasks"), _.keys)))
 
@@ -128,5 +137,39 @@ mciModule.controller('PatchController', function($scope, $filter, $window, notif
     }))
   }
 
+  // Backfill Variants/Tasks pairs for older patches
+  if(!patch.VariantsTasks && (patch.Tasks || []).length > 0 && (patch.BuildVariants || []).length > 0){
+    patch.VariantsTasks = _.map(patch.BuildVariants, function(v){
+      return {Variant:v, Tasks: _.intersection(_.pluck($window.variants[v].Tasks, "Name"), patch.Tasks)}
+    });
+  }
+
   $scope.setPatchInfo();
+
+  if((patch.VariantsTasks || []).length>0){
+    for(var i=0;i<patch.VariantsTasks.length;i++){
+      var vt = patch.VariantsTasks[i]
+      var variantIndex = _.findIndex($scope.variants, function(x){return x.id == patch.VariantsTasks[i].Variant})
+      if(variantIndex >= 0 ){
+        _.each(vt.Tasks, function(x){
+          $scope.variants[variantIndex].tasks[x] = {checked:true}
+          if(!!patch.Version){
+            // if the task was already created, we can't uncheck the box
+            $scope.variants[variantIndex].tasks[x].disabled = true;
+          }
+        })
+      }
+    }
+  }
+
+  /*
+  if(patch.Tasks.length > 0){
+    for(var i=0;i<patch.Variants.length;i++){
+      if(_.
+      var v = patch.Variants[i]
+      patch.
+    }
+  }
+  for
+  */
 })

@@ -14,7 +14,7 @@ Evergreen - Configure Patch
 {{end}}
 
 {{define "content"}}
-<div id="content" class="container-fluid" ng-controller="PatchController" ng-init="setPatchInfo()">
+<div id="content" class="container-fluid" ng-controller="PatchController">
   <notify-box ng-init="destination='errorHeader'"></notify-box>
   <div class="row">
     <div class="col-xs-7">
@@ -27,7 +27,7 @@ Evergreen - Configure Patch
           <div class="col-xs-12 btn btn-primary" ng-click="save()">
             Schedule Tasks
           </div>
-          <div class="col-xs-12 muted small text-center">[[selectionCount().tasks]] tasks across [[selectionCount().variants]] variants</div>
+          <div class="col-xs-12 muted small text-center">[[selectionCount().numTasks]] tasks across [[selectionCount().numVariants]] variants</div>
         </div>
       </div>
       <div class="col-xs-5 col-xs-offset-1">
@@ -51,11 +51,11 @@ Evergreen - Configure Patch
       </div>
     </div>
     <div class="col-xs-9" ng-show="getActiveTasks(allVariants).length > 0">
-      <div style="border-bottom:1px solid #eee; margin-bottom:3px">Select <a ng-click="changeStateAll(true)">all</a> &bull; <a ng-click="changeStateAll(false)">none</a></h5></div>
+      <div style="border-bottom:1px solid #eee; margin-bottom:3px">Select <a ng-click="changeStateAll(true)" class="change-all">all</a> &bull; <a ng-click="changeStateAll(false)" class="change-all">none</a></h5></div>
       <ul id="tasks">
         <li ng-repeat="task in getActiveTasks() | orderBy">
           <label>
-            <input type="checkbox" tristate-checkbox ng-model="tasks[task]" ng-model-options="{ getterSetter: true }"></input>
+            <input type="checkbox" tristate-checkbox ng-model="tasks[task]" ng-model-options="{ getterSetter: true }" ng-disabled="checkDisabledState(task)"></input>
             &nbsp;[[task]]
           </label>
         </li>

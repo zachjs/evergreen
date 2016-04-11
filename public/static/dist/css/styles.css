@@ -1018,6 +1018,9 @@ ul.tooltip-tasks li.tooltip-task {
 .variant-item {
   cursor: default;
 }
+.change-all {
+  cursor: pointer;
+}
 .patch {
   overflow: auto;
 }
