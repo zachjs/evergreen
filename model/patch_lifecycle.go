@@ -101,14 +101,22 @@ func UpdatePatch(proj *Project, p *patch.Patch, newPairs []TVPair) error {
 // do not exist yet out of the set of pairs. No tasks are added for builds which already exist
 // (see AddNewTasksForPatch).
 func AddNewBuildsForPatch(p *patch.Patch, patchVersion *version.Version, project *Project, pairs TVPairSet) error {
-	fmt.Println("doing add new builds")
-	fmt.Println("making ttable!!!!!!!!")
 	tt := NewPatchTaskIdTable(project, patchVersion, pairs)
 
 	newBuildIds := make([]string, 0)
 	newBuildStatuses := make([]version.BuildStatus, 0)
 
+	existingBuilds, err := build.Find(build.ByVersion(patchVersion.Id).WithFields(build.IdKey, build.BuildVariantKey))
+	if err != nil {
+		return err
+	}
+
+	// maintain list of variants that already have builds created
 	variantsProcessed := map[string]bool{}
+	for _, b := range existingBuilds {
+		variantsProcessed[b.BuildVariant] = true
+	}
+
 	for _, pair := range pairs {
 		fmt.Println("looking at ", pair.Variant)
 		if _, ok := variantsProcessed[pair.Variant]; ok { // skip variant that was already processed
@@ -123,7 +131,7 @@ func AddNewBuildsForPatch(p *patch.Patch, patchVersion *version.Version, project
 			continue
 		}
 		fmt.Println("creating build with tasknames", taskNames)
-		buildId, err := CreateBuildFromVersion(project, patchVersion, tt, pair.Variant, p.Activated, taskNames)
+		buildId, err := CreateBuildFromVersion(project, patchVersion, tt, pair.Variant, true, taskNames)
 		evergreen.Logger.Logf(slogger.INFO,
 			"Creating build for version %v, buildVariant %v, activated = %v",
 			patchVersion.Id, pair.Variant, p.Activated)
@@ -185,6 +193,7 @@ func AddNewTasksForPatch(p *patch.Patch, patchVersion *version.Version, project 
 		if len(tasksToAdd) == 0 { // no tasks to add, so we do nothing.
 			continue
 		}
+		fmt.Println("tasks to add is", tasksToAdd)
 		// Add the new set of tasks to the build.
 		if _, err = AddTasksToBuild(&b, project, patchVersion, tasksToAdd); err != nil {
 			return err

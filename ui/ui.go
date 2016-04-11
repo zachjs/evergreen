@@ -12,6 +12,7 @@ import (
 	"github.com/gorilla/sessions"
 	"net/http"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 )
 
@@ -232,7 +233,8 @@ func (uis *UIServer) NewRouter() (*mux.Router, error) {
 // LoggedError logs the given error and writes an HTTP response with its details formatted
 // as JSON if the request headers indicate that it's acceptable (or plaintext otherwise).
 func (uis *UIServer) LoggedError(w http.ResponseWriter, r *http.Request, code int, err error) {
-	evergreen.Logger.Logf(slogger.ERROR, fmt.Sprintf("%v %v %v", r.Method, r.URL, err.Error()))
+	stack := debug.Stack()
+	evergreen.Logger.Logf(slogger.ERROR, fmt.Sprintf("%v %v %v", r.Method, r.URL, err.Error(), string(stack)))
 	// if JSON is the preferred content type for the request, reply with a json message
 	if strings.HasPrefix(r.Header.Get("accept"), "application/json") {
 		uis.WriteJSON(w, code, struct {
