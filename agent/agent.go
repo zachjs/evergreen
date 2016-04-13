@@ -13,6 +13,7 @@ import (
 	_ "github.com/evergreen-ci/evergreen/plugin/config"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 )
@@ -472,6 +473,20 @@ func (agt *Agent) RunTask() (*apimodels.TaskEndResponse, error) {
 		return nil, err
 	}
 
+	newDir := fmt.Sprintf("%s_%d", taskConfig.Task.Id, taskConfig.Task.Execution)
+
+	err = os.Mkdir(filepath.Join(taskConfig.Distro.WorkDir, newDir), 0777)
+	if err != nil {
+		agt.logger.LogExecution(slogger.ERROR, "error creating task directory: %v", err)
+		return nil, err
+	}
+
+	err = os.Chdir(filepath.Join(taskConfig.Distro.WorkDir, newDir))
+	if err != nil {
+		agt.logger.LogExecution(slogger.ERROR, "error changing into task directory: %v", err)
+		return nil, err
+	}
+	taskConfig.WorkDir = filepath.Join(taskConfig.Distro.WorkDir, newDir)
 	name := taskConfig.Task.DisplayName
 	pt := taskConfig.Project.FindProjectTask(name)
 	if pt.ExecTimeoutSecs == 0 {
