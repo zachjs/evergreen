@@ -32,6 +32,8 @@ func VariantTasksToTVPairs(in []patch.VariantTasks) []TVPair {
 	return out
 }
 
+// Given a list of TVPairs (task/variant pairs), group the tasks for the same variant
+// together under a single list, and return all the variant groups as a set of patch.VariantTasks.
 func TVPairsToVariantTasks(in []TVPair) []patch.VariantTasks {
 	vtMap := map[string]patch.VariantTasks{}
 	for _, pair := range in {
