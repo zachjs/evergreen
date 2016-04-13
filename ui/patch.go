@@ -115,10 +115,13 @@ func (uis *UIServer) schedulePatch(w http.ResponseWriter, r *http.Request) {
 	} else {
 		for _, v := range patchUpdateReq.Variants {
 			for _, t := range patchUpdateReq.Tasks {
-				pairs = append(pairs, model.TVPair{v, t})
+				if project.FindTaskForVariant(t, v) != nil {
+					pairs = append(pairs, model.TVPair{v, t})
+				}
 			}
 		}
 	}
+
 	pairs = model.IncludePatchDependencies(projCtx.Project, pairs)
 
 	if err = model.ValidateTVPairs(projCtx.Project, pairs); err != nil {
