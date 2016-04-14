@@ -173,6 +173,10 @@ type Agent struct {
 
 	// Registry manages plugins available for the agent.
 	Registry plugin.Registry
+
+	// Holds the absolute path of the directory that the agent has
+	//created for executing the current task.
+	currentTaskDir string
 }
 
 // finishAndAwaitCleanup sends the returned TaskEndResponse and error
@@ -217,6 +221,15 @@ func (agt *Agent) finishAndAwaitCleanup(status string) (*apimodels.TaskEndRespon
 		if err != nil {
 			agt.logger.LogExecution(slogger.ERROR, "Error cleaning up spawned processes: %v", err)
 		}
+	}
+	err := os.Chdir(agt.taskConfig.Distro.WorkDir)
+	if err != nil {
+		agt.logger.LogExecution(slogger.ERROR, "Error changing directory out of task directory: %v", err)
+	}
+
+	err = os.RemoveAll(agt.currentTaskDir)
+	if err != nil {
+		agt.logger.LogExecution(slogger.ERROR, "Error removing working directory for the task: %v", err)
 	}
 
 	agt.logger.LogExecution(slogger.INFO, "Sending final status as: %v", detail.Status)
@@ -474,19 +487,22 @@ func (agt *Agent) RunTask() (*apimodels.TaskEndResponse, error) {
 	}
 
 	newDir := fmt.Sprintf("%s_%d", taskConfig.Task.Id, taskConfig.Task.Execution)
+	agt.currentTaskDir = filepath.Join(taskConfig.Distro.WorkDir, newDir)
 
-	err = os.Mkdir(filepath.Join(taskConfig.Distro.WorkDir, newDir), 0777)
+	err = os.Mkdir(agt.currentTaskDir, 0777)
 	if err != nil {
 		agt.logger.LogExecution(slogger.ERROR, "error creating task directory: %v", err)
 		return nil, err
 	}
 
-	err = os.Chdir(filepath.Join(taskConfig.Distro.WorkDir, newDir))
+	err = os.Chdir(agt.currentTaskDir)
 	if err != nil {
 		agt.logger.LogExecution(slogger.ERROR, "error changing into task directory: %v", err)
 		return nil, err
 	}
-	taskConfig.WorkDir = filepath.Join(taskConfig.Distro.WorkDir, newDir)
+
+	taskConfig.WorkDir = agt.currentTaskDir
+
 	name := taskConfig.Task.DisplayName
 	pt := taskConfig.Project.FindProjectTask(name)
 	if pt.ExecTimeoutSecs == 0 {
