@@ -222,15 +222,7 @@ func (agt *Agent) finishAndAwaitCleanup(status string) (*apimodels.TaskEndRespon
 			agt.logger.LogExecution(slogger.ERROR, "Error cleaning up spawned processes: %v", err)
 		}
 	}
-	err := os.Chdir(agt.taskConfig.Distro.WorkDir)
-	if err != nil {
-		agt.logger.LogExecution(slogger.ERROR, "Error changing directory out of task directory: %v", err)
-	}
-
-	err = os.RemoveAll(agt.currentTaskDir)
-	if err != nil {
-		agt.logger.LogExecution(slogger.ERROR, "Error removing working directory for the task: %v", err)
-	}
+	agt.removeTaskDirectory()
 
 	agt.logger.LogExecution(slogger.INFO, "Sending final status as: %v", detail.Status)
 	ret, err := agt.End(detail)
@@ -482,26 +474,13 @@ func (agt *Agent) RunTask() (*apimodels.TaskEndResponse, error) {
 
 	taskConfig, err := agt.GetTaskConfig()
 	if err != nil {
-		agt.logger.LogExecution(slogger.ERROR, "error fetching task configuration: %v", err)
+		agt.logger.LogExecution(slogger.ERROR, "Error fetching task configuration: %v", err)
 		return nil, err
 	}
-
-	newDir := fmt.Sprintf("%s_%d", taskConfig.Task.Id, taskConfig.Task.Execution)
-	agt.currentTaskDir = filepath.Join(taskConfig.Distro.WorkDir, newDir)
-
-	err = os.Mkdir(agt.currentTaskDir, 0777)
+	err = agt.createTaskDirectory(taskConfig)
 	if err != nil {
-		agt.logger.LogExecution(slogger.ERROR, "error creating task directory: %v", err)
 		return nil, err
 	}
-
-	err = os.Chdir(agt.currentTaskDir)
-	if err != nil {
-		agt.logger.LogExecution(slogger.ERROR, "error changing into task directory: %v", err)
-		return nil, err
-	}
-
-	taskConfig.WorkDir = agt.currentTaskDir
 
 	name := taskConfig.Task.DisplayName
 	pt := taskConfig.Project.FindProjectTask(name)
@@ -715,6 +694,47 @@ func (agt *Agent) StartBackgroundActions(signalHandler TerminateHandler) {
 		agt.maxExecTimeoutWatcher.NotifyTimeouts(agt.signalHandler.execTimeoutChan)
 	}
 	go signalHandler.HandleSignals(agt)
+}
+
+// createTaskDirectory makes a folder for the agent to execute
+// the current task withing. It changes the necessary variables
+// so that all of the agent's operations will use this folder.
+func (agt *Agent) createTaskDirectory(taskConfig *model.TaskConfig) error {
+	newDir := fmt.Sprintf("%s_%d", taskConfig.Task.Id, taskConfig.Task.Execution)
+	agt.currentTaskDir = filepath.Join(taskConfig.Distro.WorkDir, newDir)
+
+	agt.logger.LogExecution(slogger.INFO, "Making new folder for task execution.")
+	err := os.Mkdir(agt.currentTaskDir, 0777)
+	if err != nil {
+		agt.logger.LogExecution(slogger.ERROR, "Error creating task directory: %v", err)
+		return err
+	}
+
+	agt.logger.LogExecution(slogger.INFO, "Changing into task directory.")
+	err = os.Chdir(agt.currentTaskDir)
+	if err != nil {
+		agt.logger.LogExecution(slogger.ERROR, "Error changing into task directory: %v", err)
+		return err
+	}
+
+	taskConfig.WorkDir = agt.currentTaskDir
+	return nil
+}
+
+// removeTaskDirectory removes the folder the agent created for the
+// task it was executing.
+func (agt *Agent) removeTaskDirectory() {
+	agt.logger.LogExecution(slogger.INFO, "Changing directory back to distro working directory.")
+	err := os.Chdir(agt.taskConfig.Distro.WorkDir)
+	if err != nil {
+		agt.logger.LogExecution(slogger.ERROR, "Error changing directory out of task directory: %v", err)
+	}
+
+	agt.logger.LogExecution(slogger.INFO, "Deleting directory for completed task.")
+	err = os.RemoveAll(agt.currentTaskDir)
+	if err != nil {
+		agt.logger.LogExecution(slogger.ERROR, "Error removing working directory for the task: %v", err)
+	}
 }
 
 // ExitAgent removes the pid file and exits the process with the given exit code.

@@ -227,6 +227,38 @@ func TestHeartbeatSignals(t *testing.T) {
 		})
 	}
 }
+func TestAgentDirectory(t *testing.T) {
+	setupTlsConfigs(t)
+	for tlsString, tlsConfig := range tlsConfigs {
+		Convey("With agent printing directory and live API server over "+tlsString, t, func() {
+			testTask, _, err := setupAPITestData(testConfig, "print_dir_task", "linux-64", "testdata/config_test_plugin/project/evergreen-ci-render.yml", NoPatch, t)
+			testutil.HandleTestingErr(err, t, "Failed to find test task")
+			testServer, err := apiserver.CreateTestServer(testConfig, tlsConfig, plugin.APIPlugins, Verbose)
+			testutil.HandleTestingErr(err, t, "Couldn't create apiserver: %v", err)
+			testAgent, err := New(testServer.URL, testTask.Id, testTask.Secret, "", testConfig.Api.HttpsCert)
+			So(err, ShouldBeNil)
+			So(testAgent, ShouldNotBeNil)
+			testAgent.RunTask()
+			printLogsForTask(testTask.Id)
+			dirName := fmt.Sprintf("%s_0", testTask.Id)
+			Convey("Then the directory should have been set and printed", func() {
+				So(strings.Contains(testAgent.currentTaskDir, dirName), ShouldBeTrue)
+				So(scanLogsForTask(testTask.Id, "printing current directory"), ShouldBeTrue)
+				So(scanLogsForTask(testTask.Id, dirName), ShouldBeTrue)
+			})
+			Convey("Then the directory should have been deleted", func() {
+				fmt.Println("The directory should ahve been deleted")
+				files, err := ioutil.ReadDir("./")
+				testutil.HandleTestingErr(err, t, "Failed to read current directory")
+				for _, f := range files {
+					fmt.Println("Looking at file:")
+					fmt.Println(f.Name())
+					So(f.Name(), ShouldNotEqual, dirName)
+				}
+			})
+		})
+	}
+}
 
 func TestSecrets(t *testing.T) {
 	setupTlsConfigs(t)
