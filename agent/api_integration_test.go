@@ -23,6 +23,7 @@ import (
 	"gopkg.in/mgo.v2/bson"
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -236,8 +237,22 @@ func TestAgentDirectory(t *testing.T) {
 			testServer, err := apiserver.CreateTestServer(testConfig, tlsConfig, plugin.APIPlugins, Verbose)
 			testutil.HandleTestingErr(err, t, "Couldn't create apiserver: %v", err)
 			testAgent, err := New(testServer.URL, testTask.Id, testTask.Secret, "", testConfig.Api.HttpsCert)
-			So(err, ShouldBeNil)
 			So(testAgent, ShouldNotBeNil)
+
+			workDir, err := os.Getwd()
+
+			So(err, ShouldBeNil)
+			testAgent.taskConfig.Distro = &distro.Distro{
+				WorkDir: workDir,
+			}
+			files, err := ioutil.ReadDir("./")
+
+			So(err, ShouldBeNil)
+			fmt.Println("printing files before task run")
+			for _, f := range files {
+				fmt.Println("Looking at file:")
+				fmt.Println(f.Name())
+			}
 			testAgent.RunTask()
 			printLogsForTask(testTask.Id)
 			dirName := fmt.Sprintf("%s_0", testTask.Id)
@@ -250,6 +265,7 @@ func TestAgentDirectory(t *testing.T) {
 				fmt.Println("The directory should ahve been deleted")
 				files, err := ioutil.ReadDir("./")
 				testutil.HandleTestingErr(err, t, "Failed to read current directory")
+				fmt.Println("printing files")
 				for _, f := range files {
 					fmt.Println("Looking at file:")
 					fmt.Println(f.Name())
