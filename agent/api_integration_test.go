@@ -231,7 +231,7 @@ func TestHeartbeatSignals(t *testing.T) {
 		})
 	}
 }
-func TestAgentDirectory(t *testing.T) {
+func TestAgentDirectorySuccess(t *testing.T) {
 	setupTlsConfigs(t)
 	for tlsString, tlsConfig := range tlsConfigs {
 		Convey("With agent printing directory and live API server over "+tlsString, t, func() {
@@ -267,6 +267,58 @@ func TestAgentDirectory(t *testing.T) {
 			})
 			err = os.Chdir(dir)
 			testutil.HandleTestingErr(err, t, "Failed to change directory back to main dir")
+		})
+	}
+}
+func TestAgentDirectoryFailure(t *testing.T) {
+	setupTlsConfigs(t)
+	for tlsString, tlsConfig := range tlsConfigs {
+		Convey("With agent printing directory and live API server over "+tlsString, t, func() {
+			testTask, _, err := setupAPITestData(testConfig, "print_dir_task", "linux-64", filepath.Join(testDirectory, "testdata/config_test_plugin/project/evergreen-ci-render.yml"), NoPatch, t)
+			testutil.HandleTestingErr(err, t, "Failed to find test task")
+			testServer, err := apiserver.CreateTestServer(testConfig, tlsConfig, plugin.APIPlugins, Verbose)
+			testutil.HandleTestingErr(err, t, "Couldn't create apiserver: %v", err)
+			testAgent, err := New(testServer.URL, testTask.Id, testTask.Secret, "", testConfig.Api.HttpsCert)
+			So(err, ShouldBeNil)
+			So(testAgent, ShouldNotBeNil)
+
+			dir, err := os.Getwd()
+
+			testutil.HandleTestingErr(err, t, "Failed to read current directory")
+
+			distro, err := testAgent.GetDistro()
+			testutil.HandleTestingErr(err, t, "Failed to get agent distro")
+
+			dirName := fmt.Sprintf("%s/%s_0", distro.WorkDir, testTask.Id)
+			_, err = os.Create(dirName)
+			testutil.HandleTestingErr(err, t, "Couldn't create file: %v", err)
+
+			_, err = testAgent.RunTask()
+			Convey("Then the agent should have errored", func() {
+				So(err, ShouldNotBeNil)
+			})
+
+			printLogsForTask(testTask.Id)
+			Convey("Then the task should not have been run", func() {
+				So(strings.Contains(testAgent.currentTaskDir, dirName), ShouldBeTrue)
+				So(scanLogsForTask(testTask.Id, "printing current directory"), ShouldBeFalse)
+				So(scanLogsForTask(testTask.Id, dirName), ShouldBeFalse)
+			})
+			<-testAgent.KillChan
+			Convey("Then the taskDetail type should have been set to SystemCommandType and have status failed", func() {
+				select {
+				case detail := <-testAgent.endChan:
+					So(detail.Type, ShouldEqual, model.SystemCommandType)
+					So(detail.Status, ShouldEqual, evergreen.TaskFailed)
+				default:
+					t.Errorf("unable to read from the endChan")
+				}
+			})
+			err = os.Chdir(dir)
+			testutil.HandleTestingErr(err, t, "Failed to change directory back to main dir")
+
+			err = os.Remove(dirName)
+			testutil.HandleTestingErr(err, t, "Failed to remove dummy directory file")
 		})
 	}
 }
