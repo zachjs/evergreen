@@ -78,23 +78,25 @@ func MustHaveRESTContext(r *http.Request) *model.Context {
 	return pc
 }
 
-func NewRESTHandler(service restAPIService) http.Handler {
-	root := mux.NewRouter().StrictSlash(true)
+func AttachRESTHandler(root *mux.Router, service restAPIService) http.Handler {
+	rtr := root.PathPrefix("/rest/v1/").Subrouter()
+
 	// REST routes
 	rest := restAPI{service}
+
 	//restRouter := root.PathPrefix("/rest/v1/").Subrouter().StrictSlash(true)
-	root.HandleFunc("/projects", rest.loadCtx(rest.getProjectIds)).Name("project_list").Methods("GET")
-	root.HandleFunc("/projects/{project_id}", rest.loadCtx(rest.getProject)).Name("project_info").Methods("GET")
-	root.HandleFunc("/projects/{project_id}/versions", rest.loadCtx(rest.getRecentVersions)).Name("recent_versions").Methods("GET")
-	root.HandleFunc("/projects/{project_id}/revisions/{revision}", rest.loadCtx(rest.getVersionInfoViaRevision)).Name("version_info_via_revision").Methods("GET")
-	root.HandleFunc("/versions/{version_id}", rest.loadCtx(rest.getVersionInfo)).Name("version_info").Methods("GET")
-	root.HandleFunc("/versions/{version_id}", requireUser(rest.loadCtx(rest.modifyVersionInfo), nil)).Name("").Methods("PATCH")
-	root.HandleFunc("/versions/{version_id}/status", rest.loadCtx(rest.getVersionStatus)).Name("version_status").Methods("GET")
-	root.HandleFunc("/builds/{build_id}", rest.loadCtx(rest.getBuildInfo)).Name("build_info").Methods("GET")
-	root.HandleFunc("/builds/{build_id}/status", rest.loadCtx(rest.getBuildStatus)).Name("build_status").Methods("GET")
-	root.HandleFunc("/tasks/{task_id}", rest.loadCtx(rest.getTaskInfo)).Name("task_info").Methods("GET")
-	root.HandleFunc("/tasks/{task_id}/status", rest.loadCtx(rest.getTaskStatus)).Name("task_status").Methods("GET")
-	root.HandleFunc("/tasks/{task_name}/history", rest.loadCtx(rest.getTaskHistory)).Name("task_history").Methods("GET")
+	rtr.HandleFunc("/projects", rest.loadCtx(rest.getProjectIds)).Name("project_list").Methods("GET")
+	rtr.HandleFunc("/projects/{project_id}", rest.loadCtx(rest.getProject)).Name("project_info").Methods("GET")
+	rtr.HandleFunc("/projects/{project_id}/versions", rest.loadCtx(rest.getRecentVersions)).Name("recent_versions").Methods("GET")
+	rtr.HandleFunc("/projects/{project_id}/revisions/{revision}", rest.loadCtx(rest.getVersionInfoViaRevision)).Name("version_info_via_revision").Methods("GET")
+	rtr.HandleFunc("/versions/{version_id}", rest.loadCtx(rest.getVersionInfo)).Name("version_info").Methods("GET")
+	rtr.HandleFunc("/versions/{version_id}", requireUser(rest.loadCtx(rest.modifyVersionInfo), nil)).Name("").Methods("PATCH")
+	rtr.HandleFunc("/versions/{version_id}/status", rest.loadCtx(rest.getVersionStatus)).Name("version_status").Methods("GET")
+	rtr.HandleFunc("/builds/{build_id}", rest.loadCtx(rest.getBuildInfo)).Name("build_info").Methods("GET")
+	rtr.HandleFunc("/builds/{build_id}/status", rest.loadCtx(rest.getBuildStatus)).Name("build_status").Methods("GET")
+	rtr.HandleFunc("/tasks/{task_id}", rest.loadCtx(rest.getTaskInfo)).Name("task_info").Methods("GET")
+	rtr.HandleFunc("/tasks/{task_id}/status", rest.loadCtx(rest.getTaskStatus)).Name("task_status").Methods("GET")
+	rtr.HandleFunc("/tasks/{task_name}/history", rest.loadCtx(rest.getTaskHistory)).Name("task_history").Methods("GET")
 	return root
 
 }

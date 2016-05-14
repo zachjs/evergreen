@@ -884,9 +884,16 @@ func (as *APIServer) getUpdate(w http.ResponseWriter, r *http.Request) {
 	as.WriteJSON(w, http.StatusOK, as.Settings.Api.Clients)
 }
 
+// GetSettings returns the global evergreen settings.
+func (as *APIServer) GetSettings() evergreen.Settings {
+	return as.Settings
+}
+
 // Handler returns the root handler for all APIServer endpoints.
 func (as *APIServer) Handler() (http.Handler, error) {
 	root := mux.NewRouter()
+	AttachRESTHandler(root, as)
+
 	r := root.PathPrefix("/api/2/").Subrouter()
 	r.HandleFunc("/", home)
 

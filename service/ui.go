@@ -186,8 +186,7 @@ func (uis *UIServer) NewRouter() (*mux.Router, error) {
 	r.HandleFunc("/project/{project_id}/repo_revision", uis.loadCtx(uis.requireAdmin(uis.setRevision))).Methods("PUT")
 
 	// REST API
-	restRouter := r.PathPrefix("/rest/v1/").Subrouter().StrictSlash(true)
-	restRouter.Handle("/", NewRESTHandler(uis))
+	AttachRESTHandler(r, uis)
 
 	// Plugin routes
 	rootPluginRouter := r.PathPrefix("/plugin/").Subrouter()

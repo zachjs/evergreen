@@ -10,9 +10,9 @@ import (
 
 	"github.com/10gen-labs/slogger/v1"
 	"github.com/evergreen-ci/evergreen"
-	"github.com/evergreen-ci/evergreen/apiserver"
 	"github.com/evergreen-ci/evergreen/db"
 	"github.com/evergreen-ci/evergreen/plugin"
+	"github.com/evergreen-ci/evergreen/service"
 	"github.com/evergreen-ci/evergreen/util"
 	"gopkg.in/tylerb/graceful.v1"
 )
@@ -46,13 +46,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	nonSSL, err := apiserver.GetListener(settings.Api.HttpListenAddr)
+	nonSSL, err := service.GetListener(settings.Api.HttpListenAddr)
 	if err != nil {
 		evergreen.Logger.Logf(slogger.ERROR, "Failed to get HTTP listener: %v", err)
 		os.Exit(1)
 	}
 
-	ssl, err := apiserver.GetTLSListener(settings.Api.HttpsListenAddr, tlsConfig)
+	ssl, err := service.GetTLSListener(settings.Api.HttpsListenAddr, tlsConfig)
 	if err != nil {
 		evergreen.Logger.Logf(slogger.ERROR, "Failed to get HTTPS listener: %v", err)
 		os.Exit(1)
@@ -60,7 +60,7 @@ func main() {
 
 	// Start SSL and non-SSL servers in independent goroutines, but exit
 	// the process if either one fails
-	as, err := apiserver.New(settings, plugin.APIPlugins)
+	as, err := service.New(settings, plugin.APIPlugins)
 	if err != nil {
 		evergreen.Logger.Logf(slogger.ERROR, "Failed to create API server: %v", err)
 		os.Exit(1)
