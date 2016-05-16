@@ -193,7 +193,7 @@ func (restapi restAPI) getRecentVersions(w http.ResponseWriter, r *http.Request)
 // Returns a JSON response with the marshalled output of the version
 // specified in the request.
 func (restapi restAPI) getVersionInfo(w http.ResponseWriter, r *http.Request) {
-	projCtx := MustHaveProjectContext(r)
+	projCtx := MustHaveRESTContext(r)
 	srcVersion := projCtx.Version
 	if srcVersion == nil {
 		restapi.WriteJSON(w, http.StatusNotFound, responseError{Message: "error finding version"})
@@ -248,7 +248,7 @@ func (restapi restAPI) getVersionInfoViaRevision(w http.ResponseWriter, r *http.
 // Modifies part of the version specified in the request, and returns a
 // JSON response with the marshalled output of its new state.
 func (restapi restAPI) modifyVersionInfo(w http.ResponseWriter, r *http.Request) {
-	projCtx := MustHaveProjectContext(r)
+	projCtx := MustHaveRESTContext(r)
 	user := MustHaveUser(r)
 	v := projCtx.Version
 	if v == nil {

@@ -19,7 +19,7 @@ type taskStatusContent struct {
 	Tests         taskStatusByTest  `json:"tests"`
 }
 
-type restTask struct {
+type RestTask struct {
 	Id                  string                `json:"id"`
 	CreateTime          time.Time             `json:"create_time"`
 	ScheduledTime       time.Time             `json:"scheduled_time"`
@@ -83,14 +83,14 @@ type taskStatusByTest map[string]taskTestResult
 // Returns a JSON response with the marshalled output of the task
 // specified in the request.
 func (restapi restAPI) getTaskInfo(w http.ResponseWriter, r *http.Request) {
-	projCtx := MustHaveProjectContext(r)
+	projCtx := MustHaveRESTContext(r)
 	srcTask := projCtx.Task
 	if srcTask == nil {
 		restapi.WriteJSON(w, http.StatusNotFound, responseError{Message: "error finding task"})
 		return
 	}
 
-	destTask := &restTask{}
+	destTask := &RestTask{}
 	destTask.Id = srcTask.Id
 	destTask.CreateTime = srcTask.CreateTime
 	destTask.ScheduledTime = srcTask.ScheduledTime
@@ -164,7 +164,7 @@ func (restapi restAPI) getTaskInfo(w http.ResponseWriter, r *http.Request) {
 // Returns a JSON response with the status of the specified task.
 // The keys of the object are the test names.
 func (restapi restAPI) getTaskStatus(w http.ResponseWriter, r *http.Request) {
-	projCtx := MustHaveProjectContext(r)
+	projCtx := MustHaveRESTContext(r)
 	task := projCtx.Task
 	if task == nil {
 		restapi.WriteJSON(w, http.StatusNotFound, responseError{Message: "error finding task"})

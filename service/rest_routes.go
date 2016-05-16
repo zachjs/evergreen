@@ -55,14 +55,14 @@ func (ra *restAPI) loadCtx(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		context.Set(r, RestContext, ctx)
+		context.Set(r, RestContext, &ctx)
 		next(w, r)
 	}
 }
 
 // GetRESTContext fetches the context associated with the request..
 func GetRESTContext(r *http.Request) (*model.Context, error) {
-	if rv := context.Get(r, RequestProjectContext); rv != nil {
+	if rv := context.Get(r, RestContext); rv != nil {
 		return rv.(*model.Context), nil
 	}
 	return nil, fmt.Errorf("No context loaded")
