@@ -24,6 +24,12 @@ import (
 	"github.com/gorilla/mux"
 )
 
+// Keys used for storing variables in request context with type safety.
+type (
+	RequestUserKey int
+	RequestCtxKey  int
+)
+
 type (
 	// projectContext defines the set of common fields required across most UI requests.
 	projectContext struct {
@@ -228,6 +234,62 @@ func (uis *UIServer) RedirectToLogin(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, location, http.StatusFound)
 }
 
+// Loads all Task/Build/Version/Patch/Project metadata and attaches it to the request.
+// If the project is private but the user is not logged in, redirects to the login page.
+func (uis *UIServer) loadCtx(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		projCtx, err := uis.LoadProjectContext(w, r)
+		if err != nil {
+			// Some database lookup failed when fetching the data - log it
+			uis.LoggedError(w, r, http.StatusInternalServerError, fmt.Errorf("Error loading project context: %v", err))
+			return
+		}
+		if projCtx.ProjectRef != nil && projCtx.ProjectRef.Private && GetUser(r) == nil {
+			uis.RedirectToLogin(w, r)
+			return
+		}
+
+		if projCtx.Patch != nil && GetUser(r) == nil {
+			uis.RedirectToLogin(w, r)
+			return
+		}
+
+		context.Set(r, RequestProjectContext, projCtx)
+		next(w, r)
+	}
+}
+
+// populateProjectRefs loads all project refs into the context. If includePrivate is true,
+// all available projects will be included, otherwise only public projects will be loaded.
+// Sets IsAdmin to true if the user id is located in a project's admin list.
+func (pc *projectContext) populateProjectRefs(includePrivate, isSuperUser bool, dbUser *user.DBUser) error {
+	allProjs, err := model.FindAllTrackedProjectRefs()
+	if err != nil {
+		return err
+	}
+	pc.AllProjects = make([]UIProjectFields, 0, len(allProjs))
+	// User is not logged in, so only include public projects.
+	for _, p := range allProjs {
+		if !p.Enabled {
+			continue
+		}
+		if !p.Private || includePrivate {
+			uiProj := UIProjectFields{
+				DisplayName: p.DisplayName,
+				Identifier:  p.Identifier,
+				Repo:        p.Repo,
+				Owner:       p.Owner,
+			}
+			pc.AllProjects = append(pc.AllProjects, uiProj)
+		}
+
+		if includePrivate && (isSuperUser || isAdmin(dbUser, &p)) {
+			pc.IsAdmin = true
+		}
+	}
+	return nil
+}
+
 // getRequestProjectId determines the projectId to associate with the request context,
 // in cases where it could not be inferred from a task/build/version/patch etc.
 // The projectId is determined using the following criteria in order of priority:
@@ -304,31 +366,6 @@ func (uis *UIServer) LoadProjectContext(rw http.ResponseWriter, r *http.Request)
 	return pc, nil
 }
 
-// Loads all Task/Build/Version/Patch/Project metadata and attaches it to the request.
-// If the project is private but the user is not logged in, redirects to the login page.
-func (uis *UIServer) loadCtx(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		projCtx, err := uis.LoadProjectContext(w, r)
-		if err != nil {
-			// Some database lookup failed when fetching the data - log it
-			uis.LoggedError(w, r, http.StatusInternalServerError, fmt.Errorf("Error loading project context: %v", err))
-			return
-		}
-		if projCtx.ProjectRef != nil && projCtx.ProjectRef.Private && GetUser(r) == nil {
-			uis.RedirectToLogin(w, r)
-			return
-		}
-
-		if projCtx.Patch != nil && GetUser(r) == nil {
-			uis.RedirectToLogin(w, r)
-			return
-		}
-
-		context.Set(r, RequestProjectContext, projCtx)
-		next(w, r)
-	}
-}
-
 // populateTaskBuildVersion takes a task, build, and version ID and populates a projectContext
 // with as many of the task, build, and version documents as possible.
 // If any of the provided IDs is blank, they will be inferred from the more selective ones.
@@ -373,37 +410,6 @@ func (pc *projectContext) populateTaskBuildVersion(taskId, buildId, versionId st
 	}
 	return projectId, nil
 
-}
-
-// populateProjectRefs loads all project refs into the context. If includePrivate is true,
-// all available projects will be included, otherwise only public projects will be loaded.
-// Sets IsAdmin to true if the user id is located in a project's admin list.
-func (pc *projectContext) populateProjectRefs(includePrivate, isSuperUser bool, dbUser *user.DBUser) error {
-	allProjs, err := model.FindAllTrackedProjectRefs()
-	if err != nil {
-		return err
-	}
-	pc.AllProjects = make([]UIProjectFields, 0, len(allProjs))
-	// User is not logged in, so only include public projects.
-	for _, p := range allProjs {
-		if !p.Enabled {
-			continue
-		}
-		if !p.Private || includePrivate {
-			uiProj := UIProjectFields{
-				DisplayName: p.DisplayName,
-				Identifier:  p.Identifier,
-				Repo:        p.Repo,
-				Owner:       p.Owner,
-			}
-			pc.AllProjects = append(pc.AllProjects, uiProj)
-		}
-
-		if includePrivate && (isSuperUser || isAdmin(dbUser, &p)) {
-			pc.IsAdmin = true
-		}
-	}
-	return nil
 }
 
 // populatePatch loads a patch into the project context, using patchId if provided.
@@ -458,6 +464,9 @@ func UserMiddleware(um auth.UserManager) func(rw http.ResponseWriter, r *http.Re
 		}
 		if len(r.Header["Auth-Username"]) > 0 {
 			authDataName = r.Header["Auth-Username"][0]
+		}
+		if len(authDataName) == 0 && len(r.Header["Api-User"]) > 0 {
+			authDataName = r.Header["Api-User"][0]
 		}
 
 		if len(token) > 0 {

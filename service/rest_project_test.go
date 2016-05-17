@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -108,14 +109,14 @@ func TestProjectRoutes(t *testing.T) {
 		So(private.Insert(), ShouldBeNil)
 		response := httptest.NewRecorder()
 
-		Convey("users who are not logged in should be denied with a 302", func() {
+		Convey("users who are not logged in should be denied with a 401", func() {
 			url, err := router.Get("project_info").URL("project_id", privateId)
 			So(err, ShouldBeNil)
 			request, err := http.NewRequest("GET", url.String(), nil)
 			So(err, ShouldBeNil)
 			n.ServeHTTP(response, request)
 
-			So(response.Code, ShouldEqual, http.StatusFound)
+			So(response.Code, ShouldEqual, http.StatusUnauthorized)
 		})
 
 		Convey("users who are logged in should be able to access the project", func() {

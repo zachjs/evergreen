@@ -38,23 +38,12 @@ import (
 
 type key int
 
+type taskKey int
+
+const apiTaskKey taskKey = 0
+
 // ErrLockTimeout is returned when the database lock takes too long to be acquired.
 var ErrLockTimeout = errors.New("Timed out acquiring global lock")
-
-type (
-	//  special types used as key types in the request context map to prevent key collisions.
-	userKey           int
-	taskKey           int
-	projectContextKey int
-)
-
-const (
-	// Key values used to map user and project data to request context.
-	// These are private custom types to avoid key collisions.
-	apiUserKey    userKey           = 0
-	apiTaskKey    taskKey           = 0
-	apiProjCtxKey projectContextKey = 0
-)
 
 // APIServer handles communication with Evergreen agents and other back-end requests.
 type APIServer struct {

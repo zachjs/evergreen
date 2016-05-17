@@ -48,7 +48,7 @@ func TestGetTaskInfo(t *testing.T) {
 		DisableCache: true,
 	})
 	router, err := uis.NewRouter()
-	testutil.HandleTestingErr(err, t, "Failure in uis.NewRouter()")
+	testutil.HandleTestingErr(err, t, "Failed to create ui server router")
 
 	Convey("When finding info on a particular task", t, func() {
 		testutil.HandleTestingErr(db.Clear(task.Collection), t,
@@ -288,7 +288,7 @@ func TestGetTaskStatus(t *testing.T) {
 	})
 
 	router, err := uis.NewRouter()
-	testutil.HandleTestingErr(err, t, "Failure in uis.NewRouter()")
+	testutil.HandleTestingErr(err, t, "Failed to create ui server router")
 
 	Convey("When finding the status of a particular task", t, func() {
 		testutil.HandleTestingErr(db.Clear(task.Collection), t,

@@ -38,8 +38,9 @@ func (ra *restAPI) loadCtx(next http.HandlerFunc) http.HandlerFunc {
 		buildId := vars["build_id"]
 		versionId := vars["version_id"]
 		patchId := vars["patch_id"]
+		projectId := vars["project_id"]
 
-		ctx, err := model.LoadContext(taskId, buildId, versionId, patchId, "")
+		ctx, err := model.LoadContext(taskId, buildId, versionId, patchId, projectId)
 		if err != nil {
 			// Some database lookup failed when fetching the data - log it
 			ra.LoggedError(w, r, http.StatusInternalServerError, fmt.Errorf("Error loading project context: %v", err))
@@ -79,7 +80,7 @@ func MustHaveRESTContext(r *http.Request) *model.Context {
 }
 
 func AttachRESTHandler(root *mux.Router, service restAPIService) http.Handler {
-	rtr := root.PathPrefix("/rest/v1/").Subrouter()
+	rtr := root.PathPrefix("/rest/v1/").Subrouter().StrictSlash(true)
 
 	// REST routes
 	rest := restAPI{service}

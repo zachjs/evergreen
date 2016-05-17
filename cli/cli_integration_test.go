@@ -5,13 +5,13 @@ import (
 	"testing"
 
 	"github.com/evergreen-ci/evergreen"
-	"github.com/evergreen-ci/evergreen/apiserver"
 	"github.com/evergreen-ci/evergreen/db"
 	"github.com/evergreen-ci/evergreen/model"
 	"github.com/evergreen-ci/evergreen/model/patch"
 	"github.com/evergreen-ci/evergreen/model/task"
 	"github.com/evergreen-ci/evergreen/model/user"
 	"github.com/evergreen-ci/evergreen/plugin"
+	"github.com/evergreen-ci/evergreen/service"
 	"github.com/evergreen-ci/evergreen/testutil"
 	. "github.com/smartystreets/goconvey/convey"
 	"gopkg.in/yaml.v2"
@@ -36,7 +36,7 @@ func TestCLIFunctions(t *testing.T) {
 
 	Convey("with API test server running", t, func() {
 		// create a test API server
-		testServer, err := apiserver.CreateTestServer(testConfig, nil, plugin.APIPlugins, true)
+		testServer, err := service.CreateTestServer(testConfig, nil, plugin.APIPlugins, true)
 
 		// create a test user
 		So(db.Clear(user.Collection), ShouldBeNil)
@@ -75,7 +75,7 @@ func TestCLIFunctions(t *testing.T) {
 		settingsFile.Close()
 		t.Log("Wrote settings file to ", settingsFile.Name())
 
-		ac, _, err := getAPIClient(&Options{settingsFile.Name()})
+		ac, _, _, err := getAPIClients(&Options{settingsFile.Name()})
 		So(err, ShouldBeNil)
 
 		Convey("check that creating a patch works", func() {

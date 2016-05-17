@@ -46,7 +46,7 @@ func TestGetBuildInfo(t *testing.T) {
 	})
 
 	router, err := uis.NewRouter()
-	testutil.HandleTestingErr(err, t, "Failure in uis.NewRouter()")
+	testutil.HandleTestingErr(err, t, "Failed to create ui server router")
 
 	Convey("When finding info on a particular build", t, func() {
 		testutil.HandleTestingErr(db.Clear(build.Collection), t,
@@ -216,7 +216,7 @@ func TestGetBuildStatus(t *testing.T) {
 	})
 
 	router, err := uis.NewRouter()
-	testutil.HandleTestingErr(err, t, "Failure in uis.NewRouter()")
+	testutil.HandleTestingErr(err, t, "Failed to create ui server router")
 
 	Convey("When finding the status of a particular build", t, func() {
 		testutil.HandleTestingErr(db.Clear(build.Collection), t,

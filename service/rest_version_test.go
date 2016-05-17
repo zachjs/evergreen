@@ -49,7 +49,7 @@ func TestGetRecentVersions(t *testing.T) {
 	})
 
 	router, err := uis.NewRouter()
-	testutil.HandleTestingErr(err, t, "Failure in uis.NewRouter()")
+	testutil.HandleTestingErr(err, t, "Failed to create ui server router")
 
 	err = testutil.CreateTestLocalConfig(buildTestConfig, "mci-test", "")
 	testutil.HandleTestingErr(err, t, "Error loading local config mci-test")
@@ -254,7 +254,7 @@ func TestGetVersionInfo(t *testing.T) {
 	})
 
 	router, err := uis.NewRouter()
-	testutil.HandleTestingErr(err, t, "Failure in uis.NewRouter()")
+	testutil.HandleTestingErr(err, t, "Failed to create ui server router")
 
 	err = testutil.CreateTestLocalConfig(buildTestConfig, "mci-test", "")
 	testutil.HandleTestingErr(err, t, "Error loading local config mci-test")
@@ -357,7 +357,7 @@ func TestGetVersionInfoViaRevision(t *testing.T) {
 	})
 
 	router, err := uis.NewRouter()
-	testutil.HandleTestingErr(err, t, "Failure in uis.NewRouter()")
+	testutil.HandleTestingErr(err, t, "Failed to create ui server router")
 
 	projectName := "project_test"
 
@@ -450,15 +450,15 @@ func TestActivateVersion(t *testing.T) {
 	})
 
 	router, err := uis.NewRouter()
-	testutil.HandleTestingErr(err, t, "Failure in uis.NewRouter()")
+	testutil.HandleTestingErr(err, t, "Failed to create ui server router")
 
 	n := negroni.New()
 	n.Use(negroni.HandlerFunc(UserMiddleware(uis.UserManager)))
 	n.UseHandler(router)
 
 	Convey("When marking a particular version as active", t, func() {
-		testutil.HandleTestingErr(db.Clear(version.Collection), t,
-			"Error clearing '%v' collection", version.Collection)
+		testutil.HandleTestingErr(db.ClearCollections(version.Collection, build.Collection), t,
+			"Error clearing collections")
 
 		versionId := "my-version"
 		projectName := "project_test"
@@ -569,7 +569,7 @@ func TestActivateVersion(t *testing.T) {
 		n.ServeHTTP(response, request)
 
 		Convey("response should indicate a permission error", func() {
-			So(response.Code, ShouldEqual, http.StatusFound)
+			So(response.Code, ShouldEqual, http.StatusUnauthorized)
 		})
 	})
 }
@@ -593,7 +593,7 @@ func TestGetVersionStatus(t *testing.T) {
 	})
 
 	router, err := uis.NewRouter()
-	testutil.HandleTestingErr(err, t, "Failure in uis.NewRouter()")
+	testutil.HandleTestingErr(err, t, "Failed to create ui server router")
 
 	Convey("When finding the status of a particular version", t, func() {
 		testutil.HandleTestingErr(db.Clear(build.Collection), t,

@@ -12,6 +12,7 @@ import (
 	"github.com/evergreen-ci/evergreen"
 	"github.com/evergreen-ci/evergreen/model"
 	"github.com/evergreen-ci/evergreen/model/patch"
+	"github.com/evergreen-ci/evergreen/service"
 	"github.com/evergreen-ci/evergreen/util"
 	"github.com/evergreen-ci/evergreen/validator"
 )
@@ -321,6 +322,26 @@ func (ac *APIClient) CheckUpdates() (*evergreen.ClientConfig, error) {
 	}
 
 	reply := evergreen.ClientConfig{}
+	if err := util.ReadJSONInto(resp.Body, &reply); err != nil {
+		return nil, err
+	}
+	return &reply, nil
+}
+
+func (ac *APIClient) GetTask(taskId string) (*service.RestTask, error) {
+	resp, err := ac.get("tasks/"+taskId, nil)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, NewAPIError(resp)
+	}
+
+	reply := service.RestTask{}
 	if err := util.ReadJSONInto(resp.Body, &reply); err != nil {
 		return nil, err
 	}
