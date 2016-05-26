@@ -128,7 +128,7 @@ func (uis *UIServer) requestNewHost(w http.ResponseWriter, r *http.Request) {
 
 	// Start a background goroutine that handles host creation/setup.
 	go func() {
-		host, err := spawner.CreateHost(opts)
+		host, err := spawner.CreateHost(opts, authedUser)
 		if err != nil {
 			evergreen.Logger.Logf(slogger.ERROR, "error spawning host: %v", err)
 			mailErr := notify.TrySendNotificationToUser(authedUser.Username(), fmt.Sprintf("Spawning failed"),

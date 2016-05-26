@@ -93,6 +93,7 @@ func AttachRESTHandler(root *mux.Router, service restAPIService) http.Handler {
 	rtr.HandleFunc("/versions/{version_id}", requireUser(rest.loadCtx(rest.modifyVersionInfo), nil)).Name("").Methods("PATCH")
 	rtr.HandleFunc("/versions/{version_id}/status", rest.loadCtx(rest.getVersionStatus)).Name("version_status").Methods("GET")
 	rtr.HandleFunc("/versions/{version_id}/config", rest.loadCtx(rest.getVersionConfig)).Name("version_config").Methods("GET")
+	rtr.HandleFunc("/spawnhosts/", requireUser(rest.listUserSpawnHosts).Name("list_spawnhosts").Methods("GET"))
 	rtr.HandleFunc("/builds/{build_id}", rest.loadCtx(rest.getBuildInfo)).Name("build_info").Methods("GET")
 	rtr.HandleFunc("/builds/{build_id}/status", rest.loadCtx(rest.getBuildStatus)).Name("build_status").Methods("GET")
 	rtr.HandleFunc("/tasks/{task_id}", rest.loadCtx(rest.getTaskInfo)).Name("task_info").Methods("GET")

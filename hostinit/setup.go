@@ -2,10 +2,13 @@ package hostinit
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -17,6 +20,7 @@ import (
 	"github.com/evergreen-ci/evergreen/command"
 	"github.com/evergreen-ci/evergreen/model/event"
 	"github.com/evergreen-ci/evergreen/model/host"
+	"github.com/evergreen-ci/evergreen/model/user"
 	"github.com/evergreen-ci/evergreen/notify"
 	"github.com/evergreen-ci/evergreen/util"
 	"gopkg.in/mgo.v2"
@@ -86,8 +90,7 @@ func (init *HostInit) setupReadyHosts() error {
 		go func(h host.Host) {
 
 			if err := init.ProvisionHost(&h); err != nil {
-				evergreen.Logger.Logf(slogger.ERROR, "Error provisioning host %v: %v",
-					h.Id, err)
+				evergreen.Logger.Logf(slogger.ERROR, "Error provisioning host %v: %v", h.Id, err)
 
 				// notify the admins of the failure
 				subject := fmt.Sprintf("%v Evergreen provisioning failure on %v",
@@ -259,10 +262,7 @@ func (init *HostInit) setupHost(targetHost *host.Host) ([]byte, error) {
 	}
 
 	// run the command to scp the setup script with a timeout
-	err = util.RunFunctionWithTimeout(
-		scpSetupCmd.Run,
-		SCPTimeout,
-	)
+	err = util.RunFunctionWithTimeout(scpSetupCmd.Run, SCPTimeout)
 	if err != nil {
 		if err == util.ErrTimedOut {
 			scpSetupCmd.Stop()
@@ -318,13 +318,11 @@ func (init *HostInit) ProvisionHost(h *host.Host) error {
 
 	// deal with any errors that occured while running the setup
 	if err != nil {
-
 		evergreen.Logger.Logf(slogger.ERROR, "Error running setup script: %v", err)
 
 		// another hostinit process beat us there
 		if err == ErrHostAlreadyInitializing {
-			evergreen.Logger.Logf(slogger.DEBUG,
-				"Attempted to initialize already initializing host %v", h.Id)
+			evergreen.Logger.Logf(slogger.DEBUG, "Attempted to initialize already initializing host %v", h.Id)
 			return nil
 		}
 
@@ -353,5 +351,125 @@ func (init *HostInit) ProvisionHost(h *host.Host) error {
 	evergreen.Logger.Logf(slogger.INFO, "Host %v successfully provisioned", h.Id)
 
 	return nil
+}
 
+// LocateCLIBinary returns the (absolute) path to the CLI binary for the given architecture, based
+// on the system settings. Returns an error if the file does not exist.
+func LocateCLIBinary(settings *evergreen.Settings, architecture string) (string, error) {
+	clientsSubDir := "clients"
+	if settings.ClientBinariesDir != "" {
+		clientsSubDir = settings.ClientBinariesDir
+	}
+
+	var path string
+	if filepath.IsAbs(clientsSubDir) {
+		path = filepath.Join(clientsSubDir, architecture, "main")
+	} else {
+		path = filepath.Join(evergreen.FindEvergreenHome(), clientsSubDir, architecture, "main")
+	}
+	_, err := os.Stat(path)
+	if err != nil {
+		return path, err
+	}
+	return filepath.Abs(path)
+}
+
+// LoadClient places the evergreen command line client on the host, places a copy of the user's
+// settings onto the host, and makes the binary appear in the $PATH when the user logs in.
+func (init *HostInit) LoadClient(target *host.Host, user *user.DBUser) error {
+	fmt.Println("user is", user)
+
+	// Make sure we have the binary we want to upload - if it hasn't been built for the given
+	// architecture, fail early
+	cliBinaryPath, err := LocateCLIBinary(init.Settings, target.Distro.Arch)
+	if err != nil {
+		return fmt.Errorf("Couldn't locate CLI binary for upload: %v", err)
+	}
+
+	// 1. mkdir the destination directory on the host,
+	//    and modify ~/.profile so the target binary will be on the $PATH
+	targetDir := "cli_bin"
+	hostSSHInfo, err := util.ParseSSHInfo(target.Host)
+	if err != nil {
+		return fmt.Errorf("error parsing ssh info %v: %v", target.Host, err)
+	}
+
+	cloudHost, err := providers.GetCloudHost(target, init.Settings)
+	if err != nil {
+		return fmt.Errorf("Failed to get cloud host for %v: %v", target.Id, err)
+	}
+	sshOptions, err := cloudHost.GetSSHOptions()
+	if err != nil {
+		return fmt.Errorf("Error getting ssh options for host %v: %v", target.Id, err)
+	}
+	sshOptions = append(sshOptions, "-o", "UserKnownHostsFile=/dev/null")
+
+	mkdirOutput := &util.CappedWriter{&bytes.Buffer{}, 1024 * 1024}
+	makeShellCmd := &command.RemoteCommand{
+		CmdString:      fmt.Sprintf("mkdir -m 777 -p ~/%s && echo 'PATH=$PATH:~/%s' >> ~/.profile && echo 'PATH=$PATH:~/%s' >> ~/.bash_profile", targetDir, targetDir, targetDir),
+		Stdout:         mkdirOutput,
+		Stderr:         mkdirOutput,
+		RemoteHostName: hostSSHInfo.Hostname,
+		User:           target.User,
+		Options:        append([]string{"-p", hostSSHInfo.Port}, sshOptions...),
+	}
+
+	// 2. scp the binary to that directory
+	scpOut := &util.CappedWriter{&bytes.Buffer{}, 1024 * 1024}
+	// run the make shell command with a timeout
+	err = util.RunFunctionWithTimeout(makeShellCmd.Run, 30*time.Second)
+	if err != nil {
+		fmt.Println(mkdirOutput.Buffer.String())
+		return err
+	}
+	// place the binary into the directory
+	scpSetupCmd := &command.ScpCommand{
+		Source:         cliBinaryPath,
+		Dest:           fmt.Sprintf("~/%s/evergreen", targetDir),
+		Stdout:         io.MultiWriter(scpOut, os.Stdout),
+		Stderr:         io.MultiWriter(scpOut, os.Stdout),
+		RemoteHostName: hostSSHInfo.Hostname,
+		User:           target.User,
+		Options:        append([]string{"-P", hostSSHInfo.Port}, sshOptions...),
+	}
+
+	// run the command to scp the setup script with a timeout
+	err = util.RunFunctionWithTimeout(scpSetupCmd.Run, 2*time.Minute)
+	if err != nil {
+		return err
+	}
+
+	// 4. Write a settings file for the user that owns the host, and scp it to the directory
+	outputStruct := struct {
+		User    string `json:"user"`
+		APIKey  string `json:"api_key"`
+		APIHost string `json:"api_server_host"`
+		UIHost  string `json:"ui_server_host"`
+	}{user.Id, user.APIKey, init.Settings.ApiUrl + "/api", init.Settings.Ui.Url}
+	outputJSON, err := json.Marshal(outputStruct)
+	if err != nil {
+		return err
+	}
+
+	tempFileName, err := util.WriteTempFile("", outputJSON)
+	if err != nil {
+		return err
+	}
+
+	err = util.RunFunctionWithTimeout(
+		(&command.ScpCommand{
+			Source:         tempFileName,
+			Dest:           fmt.Sprintf("~/%s/.evergreen.yml", targetDir),
+			Stdout:         io.MultiWriter(scpOut, os.Stdout),
+			Stderr:         io.MultiWriter(scpOut, os.Stdout),
+			RemoteHostName: hostSSHInfo.Hostname,
+			User:           target.User,
+			Options:        append([]string{"-P", hostSSHInfo.Port}, sshOptions...),
+		}).Run, 30*time.Second)
+	if err != nil {
+		return err
+	}
+
+	defer os.Remove(tempFileName)
+	return nil
 }

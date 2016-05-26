@@ -3,13 +3,16 @@ package cli
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
-	"os/user"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/evergreen-ci/evergreen/util"
+	"github.com/kardianos/osext"
+	"github.com/mitchellh/go-homedir"
 	"gopkg.in/yaml.v2"
 )
 
@@ -46,16 +49,35 @@ func confirm(message string, defaultYes bool) bool {
 func LoadSettings(opts *Options) (*Settings, error) {
 	confPath := opts.ConfFile
 	if confPath == "" {
-		u, err := user.Current()
+		userHome, err := homedir.Dir()
 		if err != nil {
+			// workaround for cygwin if we're on windows but couldn't get a homedir
+			if runtime.GOOS == "windows" && len(os.Getenv("HOME")) > 0 {
+				userHome = os.Getenv("HOME")
+			} else {
+				return nil, err
+			}
+		}
+		confPath = filepath.Join(userHome, ".evergreen.yml")
+	}
+	var f io.ReadCloser
+	var err, extErr, extOpenErr error
+	f, err = os.Open(confPath)
+	if err != nil {
+		// if we can't find the yml file in the home directory,
+		// try to find it in the same directory as where the binary is being run from.
+		// If we fail to determine that location, just return the first (outer) error.
+		var currentBinPath string
+		currentBinPath, extErr = osext.Executable()
+		if extErr != nil {
 			return nil, err
 		}
-		confPath = filepath.Join(u.HomeDir, ".evergreen.yml")
+		f, extOpenErr = os.Open(filepath.Join(filepath.Dir(currentBinPath), ".evergreen.yml"))
+		if extOpenErr != nil {
+			return nil, err
+		}
 	}
-	f, err := os.Open(confPath)
-	if err != nil {
-		return nil, err
-	}
+
 	settings := &Settings{}
 	err = util.ReadYAMLInto(f, settings)
 	if err != nil {
@@ -83,16 +105,18 @@ type Settings struct {
 	APIKey        string        `yaml:"api_key,omitempty"`
 	User          string        `yaml:"user,omitempty"`
 	Projects      []ProjectConf `yaml:"projects,omitempty"`
+	loadedFrom    string        `yaml:"-"`
 }
 
 func (s *Settings) Write(opts *Options) error {
 	confPath := opts.ConfFile
 	if confPath == "" {
-		u, err := user.Current()
-		if err != nil {
-			return err
+		if s.loadedFrom != "" {
+			confPath = s.loadedFrom
 		}
-		confPath = filepath.Join(u.HomeDir, ".evergreen.yml")
+	}
+	if confPath == "" {
+		return fmt.Errorf("can't determine output location for settings file")
 	}
 	yamlData, err := yaml.Marshal(s)
 	if err != nil {
