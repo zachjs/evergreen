@@ -1,11 +1,14 @@
 package spawn
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -17,6 +20,7 @@ import (
 	"github.com/evergreen-ci/evergreen/model/distro"
 	"github.com/evergreen-ci/evergreen/model/host"
 	"github.com/evergreen-ci/evergreen/model/user"
+	"github.com/evergreen-ci/evergreen/util"
 	"gopkg.in/yaml.v2"
 )
 
@@ -47,6 +51,7 @@ type Options struct {
 	UserName  string
 	PublicKey string
 	UserData  string
+	TaskId    string
 }
 
 // New returns an initialized Spawn controller.
@@ -230,10 +235,57 @@ func (sm Spawn) CreateHost(so Options, owner *user.DBUser) (*host.Host, error) {
 	}
 
 	// Put the client binary on the host
-	err = init.LoadClient(h, owner)
+	loadClientRes, err := init.LoadClient(h, owner)
 	if err != nil {
-		fmt.Printf("failed to load client on target", err)
+		// if loading the client fails, don't treat it as a fatal error
+		evergreen.Logger.Logf(slogger.WARN, "failed loading client on target machine %v: %v", h.Id, err)
+	}
+
+	if len(so.TaskId) > 0 {
+		err = sm.fetchRemoteTaskData(so.TaskId, loadClientRes.BinaryPath, loadClientRes.ConfigPath, h)
+		// if fetching the remote task data fails, don't treat this as a fatal error.
+		evergreen.Logger.Logf(slogger.WARN, "failed to fetch remote task data on target machine %v: %v", h.Id, err)
 	}
 
 	return h, nil
+}
+
+func (sm *Spawn) fetchRemoteTaskData(taskId, cliPath, confPath string, target *host.Host) error {
+	hostSSHInfo, err := util.ParseSSHInfo(target.Host)
+	if err != nil {
+		return fmt.Errorf("error parsing ssh info %v: %v", target.Host, err)
+	}
+
+	cloudHost, err := providers.GetCloudHost(target, sm.settings)
+	if err != nil {
+		return fmt.Errorf("Failed to get cloud host for %v: %v", target.Id, err)
+	}
+	sshOptions, err := cloudHost.GetSSHOptions()
+	if err != nil {
+		return fmt.Errorf("Error getting ssh options for host %v: %v", target.Id, err)
+	}
+	sshOptions = append(sshOptions, "-o", "UserKnownHostsFile=/dev/null")
+
+	// TESTING ONLY
+	// Note for testing - when running locally, if your motu URL is behind a gateway (i.e. not a
+	// static IP) the next step will fail because the API server will not be reachable.
+	// If you want it to reach your local API server, execute a command here that sets up a reverse ssh tunnel:
+	// ssh -f -N -T -R 8080:localhost:8080 -o UserKnownHostsFile=/dev/null
+	// ... or, add a time.Sleep() here that gives you enough time to log in and edit the config
+	// on the spawnhost manually.
+
+	cmdOutput := &util.CappedWriter{&bytes.Buffer{}, 1024 * 1024}
+	makeShellCmd := &command.RemoteCommand{
+		CmdString:      fmt.Sprintf("%s -c %s fetch -t %s --source --artifacts", cliPath, confPath, taskId),
+		Stdout:         io.MultiWriter(os.Stdout, cmdOutput),
+		Stderr:         io.MultiWriter(os.Stderr, cmdOutput),
+		RemoteHostName: hostSSHInfo.Hostname,
+		User:           target.User,
+		Options:        append([]string{"-p", hostSSHInfo.Port}, sshOptions...),
+	}
+
+	// run the make shell command with a timeout
+	err = util.RunFunctionWithTimeout(makeShellCmd.Run, 10*time.Minute)
+	return err
+
 }

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -374,16 +373,19 @@ func LocateCLIBinary(settings *evergreen.Settings, architecture string) (string,
 	return filepath.Abs(path)
 }
 
+type LoadClientResult struct {
+	BinaryPath string
+	ConfigPath string
+}
+
 // LoadClient places the evergreen command line client on the host, places a copy of the user's
 // settings onto the host, and makes the binary appear in the $PATH when the user logs in.
-func (init *HostInit) LoadClient(target *host.Host, user *user.DBUser) error {
-	fmt.Println("user is", user)
-
+func (init *HostInit) LoadClient(target *host.Host, user *user.DBUser) (*LoadClientResult, error) {
 	// Make sure we have the binary we want to upload - if it hasn't been built for the given
 	// architecture, fail early
 	cliBinaryPath, err := LocateCLIBinary(init.Settings, target.Distro.Arch)
 	if err != nil {
-		return fmt.Errorf("Couldn't locate CLI binary for upload: %v", err)
+		return nil, fmt.Errorf("Couldn't locate CLI binary for upload: %v", err)
 	}
 
 	// 1. mkdir the destination directory on the host,
@@ -391,22 +393,27 @@ func (init *HostInit) LoadClient(target *host.Host, user *user.DBUser) error {
 	targetDir := "cli_bin"
 	hostSSHInfo, err := util.ParseSSHInfo(target.Host)
 	if err != nil {
-		return fmt.Errorf("error parsing ssh info %v: %v", target.Host, err)
+		return nil, fmt.Errorf("error parsing ssh info %v: %v", target.Host, err)
 	}
 
 	cloudHost, err := providers.GetCloudHost(target, init.Settings)
 	if err != nil {
-		return fmt.Errorf("Failed to get cloud host for %v: %v", target.Id, err)
+		return nil, fmt.Errorf("Failed to get cloud host for %v: %v", target.Id, err)
 	}
 	sshOptions, err := cloudHost.GetSSHOptions()
 	if err != nil {
-		return fmt.Errorf("Error getting ssh options for host %v: %v", target.Id, err)
+		return nil, fmt.Errorf("Error getting ssh options for host %v: %v", target.Id, err)
 	}
 	sshOptions = append(sshOptions, "-o", "UserKnownHostsFile=/dev/null")
 
 	mkdirOutput := &util.CappedWriter{&bytes.Buffer{}, 1024 * 1024}
+
+	// Create the directory for the binary to be uploaded into.
+	// Also, make a best effort to add the binary's location to $PATH upon login. If we can't do
+	// this successfully, the command will still succeed, it just means that the user will have to
+	// use an absolute path (or manually set $PATH in their shell) to execute it.
 	makeShellCmd := &command.RemoteCommand{
-		CmdString:      fmt.Sprintf("mkdir -m 777 -p ~/%s && echo 'PATH=$PATH:~/%s' >> ~/.profile && echo 'PATH=$PATH:~/%s' >> ~/.bash_profile", targetDir, targetDir, targetDir),
+		CmdString:      fmt.Sprintf("mkdir -m 777 -p ~/%s && (echo 'PATH=$PATH:~/%s' >> ~/.profile; echo 'PATH=$PATH:~/%s' >> ~/.bash_profile || true)", targetDir, targetDir, targetDir),
 		Stdout:         mkdirOutput,
 		Stderr:         mkdirOutput,
 		RemoteHostName: hostSSHInfo.Hostname,
@@ -419,15 +426,14 @@ func (init *HostInit) LoadClient(target *host.Host, user *user.DBUser) error {
 	// run the make shell command with a timeout
 	err = util.RunFunctionWithTimeout(makeShellCmd.Run, 30*time.Second)
 	if err != nil {
-		fmt.Println(mkdirOutput.Buffer.String())
-		return err
+		return nil, fmt.Errorf("error running setup command for cli, %v: '%v'", mkdirOutput.Buffer.String(), err)
 	}
 	// place the binary into the directory
 	scpSetupCmd := &command.ScpCommand{
 		Source:         cliBinaryPath,
 		Dest:           fmt.Sprintf("~/%s/evergreen", targetDir),
-		Stdout:         io.MultiWriter(scpOut, os.Stdout),
-		Stderr:         io.MultiWriter(scpOut, os.Stdout),
+		Stdout:         scpOut,
+		Stderr:         scpOut,
 		RemoteHostName: hostSSHInfo.Hostname,
 		User:           target.User,
 		Options:        append([]string{"-P", hostSSHInfo.Port}, sshOptions...),
@@ -436,7 +442,7 @@ func (init *HostInit) LoadClient(target *host.Host, user *user.DBUser) error {
 	// run the command to scp the setup script with a timeout
 	err = util.RunFunctionWithTimeout(scpSetupCmd.Run, 2*time.Minute)
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("error running SCP command for cli, %v: '%v'", scpOut.Buffer.String(), err)
 	}
 
 	// 4. Write a settings file for the user that owns the host, and scp it to the directory
@@ -448,28 +454,31 @@ func (init *HostInit) LoadClient(target *host.Host, user *user.DBUser) error {
 	}{user.Id, user.APIKey, init.Settings.ApiUrl + "/api", init.Settings.Ui.Url}
 	outputJSON, err := json.Marshal(outputStruct)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	tempFileName, err := util.WriteTempFile("", outputJSON)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	err = util.RunFunctionWithTimeout(
 		(&command.ScpCommand{
 			Source:         tempFileName,
 			Dest:           fmt.Sprintf("~/%s/.evergreen.yml", targetDir),
-			Stdout:         io.MultiWriter(scpOut, os.Stdout),
-			Stderr:         io.MultiWriter(scpOut, os.Stdout),
+			Stdout:         scpOut,
+			Stderr:         scpOut,
 			RemoteHostName: hostSSHInfo.Hostname,
 			User:           target.User,
 			Options:        append([]string{"-P", hostSSHInfo.Port}, sshOptions...),
 		}).Run, 30*time.Second)
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("error running SCP command for evergreen.yml, %v: '%v'", scpOut.Buffer.String(), err)
 	}
 
 	defer os.Remove(tempFileName)
-	return nil
+	return &LoadClientResult{
+		BinaryPath: fmt.Sprintf("~/%s/evergreen", targetDir),
+		ConfigPath: fmt.Sprintf("~/%s/.evergreen.yml", targetDir),
+	}, nil
 }

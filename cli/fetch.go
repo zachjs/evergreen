@@ -105,17 +105,17 @@ func fetchSource(ac, rc *APIClient, rootPath, taskId string, noPatch bool) error
 		return err
 	}
 
-	cloneDir := util.CleanForPath(fmt.Sprintf("%v-src", task.Project))
+	cloneDir := util.CleanForPath(fmt.Sprintf("source-%v", task.Project))
 	var patch *service.RestPatch
 	if task.Requester == evergreen.PatchVersionRequester {
-		cloneDir = util.CleanForPath(fmt.Sprintf("patch-%v_%v", task.PatchNumber, task.Project))
+		cloneDir = util.CleanForPath(fmt.Sprintf("source-patch-%v_%v", task.PatchNumber, task.Project))
 		patch, err = rc.GetPatch(task.PatchId)
 		if err != nil {
 			return err
 		}
 	} else {
 		if len(task.Revision) >= 5 {
-			cloneDir = util.CleanForPath(fmt.Sprintf("%v-%v", task.Project, task.Revision[0:6]))
+			cloneDir = util.CleanForPath(fmt.Sprintf("source-%v-%v", task.Project, task.Revision[0:6]))
 		}
 	}
 
@@ -333,13 +333,13 @@ type artifactDownload struct {
 
 func getArtifactFolderName(task *service.RestTask) string {
 	if task.Requester == evergreen.PatchVersionRequester {
-		return fmt.Sprintf("patch-%v_%v_%v", task.PatchNumber, task.BuildVariant, task.DisplayName)
+		return fmt.Sprintf("artifacts-patch-%v_%v_%v", task.PatchNumber, task.BuildVariant, task.DisplayName)
 	}
 
 	if len(task.Revision) >= 5 {
-		return fmt.Sprintf("%v-%v_%v", task.Revision[0:6], task.BuildVariant, task.DisplayName)
+		return fmt.Sprintf("artifacts-%v-%v_%v", task.Revision[0:6], task.BuildVariant, task.DisplayName)
 	}
-	return fmt.Sprintf("%v_%v", task.BuildVariant, task.DisplayName)
+	return fmt.Sprintf("artifacts-%v_%v", task.BuildVariant, task.DisplayName)
 }
 
 // getUrlsChannel takes a seed task, and returns a channel that streams all of the artifacts

@@ -1227,6 +1227,11 @@ textarea {
 .no-word-wrap {
   white-space: nowrap;
 }
+.spawn-task-options {
+  margin-top: 5px;
+  margin-bottom: 15px;
+  margin-left: 10px;
+}
 .active-label {
   float: right;
 }
@@ -1268,12 +1273,20 @@ textarea {
 }
 #task-info-elements {
   margin-top: 20px;
-}
-#task-info-elements i {
-  margin-right: 10px;
+  width: 100%;
 }
 #task-info-elements td {
   padding: 3px 0;
+  text-align: left;
+}
+#task-info-elements td.icon {
+  padding-right: 10px;
+  text-align: right;
+  width: 20px;
+}
+#task-info-elements tr {
+  margin-top: 20px;
+  padding-top: 10px;
 }
 #tests-info {
   max-height: 300px;
@@ -1481,6 +1494,14 @@ textarea {
 }
 .dep-table .cross-variant {
   font-weight: bold;
+}
+.host-btn-group {
+  padding-left: 20px;
+  display: inline;
+}
+.host-info-item {
+  margin-right: 5px;
+  text-transform: none;
 }
 .task-history-gridtable .top-header-row.locked {
   margin-left: 250px;
