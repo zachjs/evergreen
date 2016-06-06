@@ -267,7 +267,7 @@ func (sm *Spawn) fetchRemoteTaskData(taskId, cliPath, confPath string, target *h
 	sshOptions = append(sshOptions, "-o", "UserKnownHostsFile=/dev/null")
 
 	// TESTING ONLY
-	// Note for testing - when running locally, if your motu URL is behind a gateway (i.e. not a
+	// Note for testing - when running locally, if your API Server's URL is behind a gateway (i.e. not a
 	// static IP) the next step will fail because the API server will not be reachable.
 	// If you want it to reach your local API server, execute a command here that sets up a reverse ssh tunnel:
 	// ssh -f -N -T -R 8080:localhost:8080 -o UserKnownHostsFile=/dev/null
@@ -277,8 +277,8 @@ func (sm *Spawn) fetchRemoteTaskData(taskId, cliPath, confPath string, target *h
 	cmdOutput := &util.CappedWriter{&bytes.Buffer{}, 1024 * 1024}
 	makeShellCmd := &command.RemoteCommand{
 		CmdString:      fmt.Sprintf("%s -c %s fetch -t %s --source --artifacts", cliPath, confPath, taskId),
-		Stdout:         io.MultiWriter(os.Stdout, cmdOutput),
-		Stderr:         io.MultiWriter(os.Stderr, cmdOutput),
+		Stdout:         cmdOutput,
+		Stderr:         cmdOutput,
 		RemoteHostName: hostSSHInfo.Hostname,
 		User:           target.User,
 		Options:        append([]string{"-p", hostSSHInfo.Port}, sshOptions...),

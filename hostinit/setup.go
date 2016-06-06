@@ -14,6 +14,7 @@ import (
 	"github.com/10gen-labs/slogger/v1"
 	"github.com/evergreen-ci/evergreen"
 	"github.com/evergreen-ci/evergreen/alerts"
+	"github.com/evergreen-ci/evergreen/cli"
 	"github.com/evergreen-ci/evergreen/cloud"
 	"github.com/evergreen-ci/evergreen/cloud/providers"
 	"github.com/evergreen-ci/evergreen/command"
@@ -241,11 +242,11 @@ func (init *HostInit) setupHost(targetHost *host.Host) ([]byte, error) {
 
 	cloudHost, err := providers.GetCloudHost(targetHost, init.Settings)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to get cloud host for %v: %v", targetHost.Id, err)
+		return nil, fmt.Errorf("failed to get cloud host for %v: %v", targetHost.Id, err)
 	}
 	sshOptions, err := cloudHost.GetSSHOptions()
 	if err != nil {
-		return nil, fmt.Errorf("Error getting ssh options for host %v: %v", targetHost.Id, err)
+		return nil, fmt.Errorf("error getting ssh options for host %v: %v", targetHost.Id, err)
 	}
 
 	// copy setup script over to the remote machine
@@ -373,6 +374,8 @@ func LocateCLIBinary(settings *evergreen.Settings, architecture string) (string,
 	return filepath.Abs(path)
 }
 
+// LoadClientResult indicates the locations on a target host where the CLI binary and it's config
+// file have been written to.
 type LoadClientResult struct {
 	BinaryPath string
 	ConfigPath string
@@ -380,6 +383,8 @@ type LoadClientResult struct {
 
 // LoadClient places the evergreen command line client on the host, places a copy of the user's
 // settings onto the host, and makes the binary appear in the $PATH when the user logs in.
+// If successful, returns an instance of LoadClientResult which contains the paths where the
+// binary and config file were written to.
 func (init *HostInit) LoadClient(target *host.Host, user *user.DBUser) (*LoadClientResult, error) {
 	// Make sure we have the binary we want to upload - if it hasn't been built for the given
 	// architecture, fail early
@@ -461,22 +466,22 @@ func (init *HostInit) LoadClient(target *host.Host, user *user.DBUser) (*LoadCli
 	if err != nil {
 		return nil, err
 	}
+	defer os.Remove(tempFileName)
 
-	err = util.RunFunctionWithTimeout(
-		(&command.ScpCommand{
-			Source:         tempFileName,
-			Dest:           fmt.Sprintf("~/%s/.evergreen.yml", targetDir),
-			Stdout:         scpOut,
-			Stderr:         scpOut,
-			RemoteHostName: hostSSHInfo.Hostname,
-			User:           target.User,
-			Options:        append([]string{"-P", hostSSHInfo.Port}, sshOptions...),
-		}).Run, 30*time.Second)
+	scpYmlCommand := &command.ScpCommand{
+		Source:         tempFileName,
+		Dest:           fmt.Sprintf("~/%s/.evergreen.yml", targetDir),
+		Stdout:         scpOut,
+		Stderr:         scpOut,
+		RemoteHostName: hostSSHInfo.Hostname,
+		User:           target.User,
+		Options:        append([]string{"-P", hostSSHInfo.Port}, sshOptions...),
+	}
+	err = util.RunFunctionWithTimeout(scpYmlCommand.Run, 30*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("error running SCP command for evergreen.yml, %v: '%v'", scpOut.Buffer.String(), err)
 	}
 
-	defer os.Remove(tempFileName)
 	return &LoadClientResult{
 		BinaryPath: fmt.Sprintf("~/%s/evergreen", targetDir),
 		ConfigPath: fmt.Sprintf("~/%s/.evergreen.yml", targetDir),

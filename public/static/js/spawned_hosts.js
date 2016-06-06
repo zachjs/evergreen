@@ -117,7 +117,7 @@ mciModule.controller('SpawnedHostsCtrl', ['$scope','$window', '$timeout', 'mciSp
             // If there is a callback to run after the distros were fetched, 
             // execute it.
             if(cb){
-              cb()
+              cb();
             }
           },
           error: function(jqXHR, status, errorThrown) {
@@ -228,7 +228,7 @@ mciModule.controller('SpawnedHostsCtrl', ['$scope','$window', '$timeout', 'mciSp
         };
         if(selectDistroId){
           var selectedIndex = _.findIndex($scope.spawnableDistros, 
-            function(x){return x.distro.name ==selectDistroId}
+            function(x){return x.distro.name == selectDistroId}
           )
           if(selectedIndex>=0){
             $scope.selectedDistro = $scope.spawnableDistros[selectedIndex].distro;
