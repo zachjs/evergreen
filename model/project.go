@@ -13,7 +13,6 @@ import (
 	"github.com/evergreen-ci/evergreen/model/version"
 	"github.com/evergreen-ci/evergreen/util"
 	ignore "github.com/sabhiram/go-git-ignore"
-	"gopkg.in/yaml.v2"
 )
 
 const (
@@ -635,20 +634,6 @@ func FindProject(revision string, projectRef *ProjectRef) (*Project, error) {
 		}
 	}
 	return project, nil
-}
-
-// LoadProjectInto loads the raw data from the config file into project
-// and sets the project's identifier field to identifier. Tags are expanded.
-func LoadProjectInto(data []byte, identifier string, project *Project) error {
-	if err := yaml.Unmarshal(data, project); err != nil {
-		return fmt.Errorf("parse error unmarshalling project: %v", err)
-	}
-	// expand task definitions
-	if err := project.EvaluateTags(); err != nil {
-		return fmt.Errorf("error evaluating project tags: %v", err)
-	}
-	project.Identifier = identifier
-	return nil
 }
 
 func (p *Project) FindTaskForVariant(task, variant string) *BuildVariantTask {
