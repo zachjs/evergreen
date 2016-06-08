@@ -98,5 +98,85 @@ tasks:
 			So(pp.p.Tasks[1].Requires[1].Name, ShouldEqual, "task2")
 			So(pp.p.Tasks[1].Requires[1].Variant, ShouldEqual, "")
 		})
+		Convey("a single requirement should parse", func() {
+			simple := `
+tasks:
+- name: task1
+  requires:
+    name: "task0"
+    variant: "v1"
+`
+			pass := pp.createIntermediateProject([]byte(simple))
+			So(pass, ShouldBeTrue)
+			So(len(pp.errors), ShouldEqual, 0)
+			So(len(pp.warnings), ShouldEqual, 0)
+			So(pp.p.Tasks[0].Requires[0].Name, ShouldEqual, "task0")
+			So(pp.p.Tasks[0].Requires[0].Variant, ShouldEqual, "v1")
+		})
+	})
+}
+
+func TestCreateIntermediateProjectBuildVariants(t *testing.T) {
+	Convey("Testing different project files", t, func() {
+		pp := &projectParser{}
+		Convey("a file with multiple BVTs should parse", func() {
+			simple := `
+buildvariants:
+- name: "v1"
+  stepback: true
+  batchtime: 123
+  modules: ["wow","cool"]
+  run_on:
+  - "windows2000"
+  tasks:
+  - name: "t1"
+  - name: "t2"
+    depends_on:
+    - name: "t3"
+      variant: "v0"
+    requires:
+    - name: "t4"
+    stepback: false
+    priority: 77
+`
+			pass := pp.createIntermediateProject([]byte(simple))
+			Println(pp.errors)
+			So(pass, ShouldBeTrue)
+			So(len(pp.errors), ShouldEqual, 0)
+			So(len(pp.warnings), ShouldEqual, 0)
+			bv := pp.p.BuildVariants[0]
+			So(bv.Name, ShouldEqual, "v1")
+			So(*bv.Stepback, ShouldBeTrue)
+			So(bv.RunOn[0], ShouldEqual, "windows2000")
+			So(len(bv.Modules), ShouldEqual, 2)
+			So(bv.Tasks[0].Name, ShouldEqual, "t1")
+			So(bv.Tasks[1].Name, ShouldEqual, "t2")
+			So(bv.Tasks[1].DependsOn[0].TaskSelector, ShouldResemble, TaskSelector{Name: "t3", Variant: "v0"})
+			So(bv.Tasks[1].Requires[0], ShouldResemble, TaskSelector{Name: "t4"})
+			So(*bv.Tasks[1].Stepback, ShouldBeFalse)
+			So(bv.Tasks[1].Priority, ShouldEqual, 77)
+		})
+		Convey("a file with oneline BVTs should parse", func() {
+			simple := `
+buildvariants:
+- name: "v1"
+  tasks:
+  - "t1"
+  - name: "t2"
+    depends_on: "t3"
+    requires: "t4"
+`
+			pass := pp.createIntermediateProject([]byte(simple))
+			Println(pp.errors)
+			So(pass, ShouldBeTrue)
+			So(len(pp.errors), ShouldEqual, 0)
+			So(len(pp.warnings), ShouldEqual, 0)
+			bv := pp.p.BuildVariants[0]
+			So(bv.Name, ShouldEqual, "v1")
+			So(bv.Tasks[0].Name, ShouldEqual, "t1")
+			So(bv.Tasks[1].Name, ShouldEqual, "t2")
+			So(bv.Tasks[1].DependsOn[0].TaskSelector, ShouldResemble, TaskSelector{Name: "t3"})
+			So(bv.Tasks[1].Requires[0], ShouldResemble, TaskSelector{Name: "t4"})
+		})
 	})
 }

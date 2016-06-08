@@ -7,60 +7,60 @@ import (
 )
 
 type parseProject struct {
-	Enabled         bool            `yaml:"enabled,omitempty" bson:"enabled"` //TODO clean up tags
-	Stepback        bool            `yaml:"stepback,omitempty" bson:"stepback"`
-	DisableCleanup  bool            `yaml:"disable_cleanup,omitempty" bson:"disable_cleanup,omitempty"`
-	BatchTime       int             `yaml:"batchtime,omitempty" bson:"batch_time"`
-	Owner           string          `yaml:"owner,omitempty" bson:"owner_name"`
-	Repo            string          `yaml:"repo,omitempty" bson:"repo_name"`
-	RemotePath      string          `yaml:"remote_path,omitempty" bson:"remote_path"`
-	RepoKind        string          `yaml:"repokind,omitempty" bson:"repo_kind"`
-	Branch          string          `yaml:"branch,omitempty" bson:"branch_name"`
-	Identifier      string          `yaml:"identifier,omitempty" bson:"identifier"`
-	DisplayName     string          `yaml:"display_name,omitempty" bson:"display_name"`
-	CommandType     string          `yaml:"command_type,omitempty" bson:"command_type"`
-	Ignore          []string        `yaml:"ignore,omitempty" bson:"ignore"`
-	Pre             *YAMLCommandSet `yaml:"pre,omitempty" bson:"pre"`
-	Post            *YAMLCommandSet `yaml:"post,omitempty" bson:"post"`
-	Timeout         *YAMLCommandSet `yaml:"timeout,omitempty" bson:"timeout"`
-	CallbackTimeout int             `yaml:"callback_timeout_secs,omitempty" bson:"callback_timeout_secs"`
-	Modules         []Module        `yaml:"modules,omitempty" bson:"modules"`
-	//BuildVariants   []BuildVariant             `yaml:"buildvariants,omitempty" bson:"build_variants"`
-	Functions       map[string]*YAMLCommandSet `yaml:"functions,omitempty" bson:"functions"`
-	Tasks           []parseTask                `yaml:"tasks,omitempty" bson:"tasks"`
-	ExecTimeoutSecs int                        `yaml:"exec_timeout_secs,omitempty" bson:"exec_timeout_secs"`
+	Enabled         bool                       `yaml:"enabled"`
+	Stepback        bool                       `yaml:"stepback"`
+	DisableCleanup  bool                       `yaml:"disable_cleanup"`
+	BatchTime       int                        `yaml:"batchtime"`
+	Owner           string                     `yaml:"owner"`
+	Repo            string                     `yaml:"repo"`
+	RemotePath      string                     `yaml:"remote_path"`
+	RepoKind        string                     `yaml:"repokind"`
+	Branch          string                     `yaml:"branch"`
+	Identifier      string                     `yaml:"identifier"`
+	DisplayName     string                     `yaml:"display_name"`
+	CommandType     string                     `yaml:"command_type"`
+	Ignore          []string                   `yaml:"ignore"`
+	Pre             *YAMLCommandSet            `yaml:"pre"`
+	Post            *YAMLCommandSet            `yaml:"post"`
+	Timeout         *YAMLCommandSet            `yaml:"timeout"`
+	CallbackTimeout int                        `yaml:"callback_timeout_secs"`
+	Modules         []Module                   `yaml:"modules"`
+	BuildVariants   []parseBV                  `yaml:"buildvariants"`
+	Functions       map[string]*YAMLCommandSet `yaml:"functions"`
+	Tasks           []parseTask                `yaml:"tasks"`
+	ExecTimeoutSecs int                        `yaml:"exec_timeout_secs"`
 }
 
 // Unmarshalled from the "tasks" list in the project file
 type parseTask struct {
-	Name            string              `yaml:"name,omitempty" bson:"name"`
-	Priority        int64               `yaml:"priority,omitempty" bson:"priority"`
-	ExecTimeoutSecs int                 `yaml:"exec_timeout_secs,omitempty" bson:"exec_timeout_secs"`
-	DisableCleanup  bool                `yaml:"disable_cleanup,omitempty" bson:"disable_cleanup,omitempty"`
-	DependsOn       parseDependencies   `yaml:"depends_on,omitempty" bson:"depends_on"`
-	Requires        []TaskSelector      `yaml:"requires,omitempty" bson:"requires"`
-	Commands        []PluginCommandConf `yaml:"commands,omitempty" bson:"commands"`
-	Tags            []string            `yaml:"tags,omitempty" bson:"tags"`
+	Name            string              `yaml:"name"`
+	Priority        int64               `yaml:"priority"`
+	ExecTimeoutSecs int                 `yaml:"exec_timeout_secs"`
+	DisableCleanup  bool                `yaml:"disable_cleanup"`
+	DependsOn       parseDependencies   `yaml:"depends_on"`
+	Requires        TaskSelectors       `yaml:"requires"`
+	Commands        []PluginCommandConf `yaml:"commands"`
+	Tags            []string            `yaml:"tags"`
 
 	// Use a *bool so that there are 3 possible states:
 	//   1. nil   = not overriding the project setting (default)
 	//   2. true  = overriding the project setting with true
 	//   3. false = overriding the project setting with false
-	Patchable *bool `yaml:"patchable,omitempty" bson:"patchable,omitempty"`
-	Stepback  *bool `yaml:"stepback,omitempty" bson:"stepback,omitempty"`
+	Patchable *bool `yaml:"patchable"`
+	Stepback  *bool `yaml:"stepback"`
 }
 
 type parseDependency struct {
 	TaskSelector
-	Status        string `yaml:"status,omitempty" bson:"status,omitempty"`
-	PatchOptional bool   `yaml:"patch_optional,omitempty" bson:"patch_optional,omitempty"`
+	Status        string `yaml:"status"`
+	PatchOptional bool   `yaml:"patch_optional"`
 }
 
 type parseDependencies []parseDependency
 
 func (pds *parseDependencies) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	pd := parseDependency{}
 	// first check if we are only doing one dependency
+	pd := parseDependency{}
 	if err := unmarshal(&pd); err == nil {
 		*pds = parseDependencies([]parseDependency{pd})
 		return nil
@@ -78,8 +78,8 @@ func (pd *parseDependency) UnmarshalYAML(unmarshal func(interface{}) error) erro
 		return err
 	}
 	otherFields := struct {
-		Status        string `yaml:"status,omitempty"`
-		PatchOptional bool   `yaml:"patch_optional,omitempty"`
+		Status        string `yaml:"status"`
+		PatchOptional bool   `yaml:"patch_optional"`
 	}{}
 	// ignore any errors here; if we're using a single-string selector, this will fail
 	unmarshal(&otherFields)
@@ -89,10 +89,27 @@ func (pd *parseDependency) UnmarshalYAML(unmarshal func(interface{}) error) erro
 	return nil
 }
 
-//TODO
+//TODO consider making this a TVSelector
 type TaskSelector struct {
-	Name    string `yaml:"name,omitempty" bson:"name"`
-	Variant string `yaml:"variant,omitempty" bson:"variant,omitempty"`
+	Name    string `yaml:"name"`
+	Variant string `yaml:"variant"`
+}
+
+type TaskSelectors []TaskSelector
+
+func (tss *TaskSelectors) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	// first, attempt to unmarshal just a selector string
+	var single TaskSelector
+	if err := unmarshal(&single); err == nil {
+		*tss = TaskSelectors([]TaskSelector{single})
+		return nil
+	}
+	var slice []TaskSelector
+	if err := unmarshal(&slice); err != nil {
+		return err
+	}
+	*tss = TaskSelectors(slice)
+	return nil
 }
 
 // UnmarshalYAML allows tasks to be referenced as single selector strings.
@@ -121,6 +138,58 @@ func (ts *TaskSelector) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
+type parseBV struct {
+	Name        string            `yaml:"name"`
+	DisplayName string            `yaml:"display_name"`
+	Expansions  map[string]string `yaml:"expansions"`
+	Modules     []string          `yaml:"modules"`
+	Disabled    bool              `yaml:"disabled"`
+	Push        bool              `yaml:"push"`
+	BatchTime   *int              `yaml:"batchtime"`
+	Stepback    *bool             `yaml:"stepback"`
+	RunOn       []string          `yaml:"run_on"` //TODO make this a StringSlice
+	Tasks       []parseBVTask     `yaml:"tasks"`
+}
+
+type parseBVTask struct {
+	Name            string            `yaml:"name"`
+	Patchable       *bool             `yaml:"patchable"`
+	Priority        int64             `yaml:"priority"`
+	DependsOn       parseDependencies `yaml:"depends_on"`
+	Requires        TaskSelectors     `yaml:"requires"`
+	ExecTimeoutSecs int               `yaml:"exec_timeout_secs"`
+	Stepback        *bool             `yaml:"stepback"`
+	Distros         []string          `yaml:"distros"` //TODO accept "run_on" here
+}
+
+func (pbvt *parseBVTask) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	// first, attempt to unmarshal just a selector string
+	var onlySelector string
+	if err := unmarshal(&onlySelector); err == nil {
+		if onlySelector != "" {
+			pbvt.Name = onlySelector
+			return nil
+		}
+	}
+	// we define a new type so that we can grab the yaml struct tags without the struct methods,
+	// preventing infinte recursion on the UnmarshalYAML() method.
+	type copyType parseBVTask
+	var cpy copyType
+	if err := unmarshal(&cpy); err != nil {
+		return err
+	}
+	if cpy.Name == "" {
+		return fmt.Errorf("task selector must have a name")
+	}
+	*pbvt = parseBVTask(cpy)
+	return nil
+}
+
+// // // //
+// // // //
+// // // //
+// // // //
+
 // LoadProjectInto loads the raw data from the config file into project
 // and sets the project's identifier field to identifier. Tags are expanded.
 func LoadProjectInto(data []byte, identifier string, project *Project) error {
@@ -134,11 +203,6 @@ func LoadProjectInto(data []byte, identifier string, project *Project) error {
 	project.Identifier = identifier
 	return nil
 }
-
-// // // //
-// // // //
-// // // //
-// // // //
 
 type projectParser struct {
 	p        *parseProject
