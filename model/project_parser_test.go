@@ -75,3 +75,28 @@ tasks:
 		})
 	})
 }
+
+func TestCreateIntermediateProjectRequirements(t *testing.T) {
+	Convey("Testing different project files", t, func() {
+		pp := &projectParser{}
+		Convey("a simple project file should parse", func() {
+			simple := `
+tasks:
+- name: task0
+- name: task1
+  requires:
+  - name: "task0"
+    variant: "v1"
+  - "task2"
+`
+			pass := pp.createIntermediateProject([]byte(simple))
+			So(pass, ShouldBeTrue)
+			So(len(pp.errors), ShouldEqual, 0)
+			So(len(pp.warnings), ShouldEqual, 0)
+			So(pp.p.Tasks[1].Requires[0].Name, ShouldEqual, "task0")
+			So(pp.p.Tasks[1].Requires[0].Variant, ShouldEqual, "v1")
+			So(pp.p.Tasks[1].Requires[1].Name, ShouldEqual, "task2")
+			So(pp.p.Tasks[1].Requires[1].Variant, ShouldEqual, "")
+		})
+	})
+}

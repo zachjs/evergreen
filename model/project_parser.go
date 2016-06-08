@@ -26,9 +26,9 @@ type parseProject struct {
 	CallbackTimeout int             `yaml:"callback_timeout_secs,omitempty" bson:"callback_timeout_secs"`
 	Modules         []Module        `yaml:"modules,omitempty" bson:"modules"`
 	//BuildVariants   []BuildVariant             `yaml:"buildvariants,omitempty" bson:"build_variants"`
-	//Functions       map[string]*YAMLCommandSet `yaml:"functions,omitempty" bson:"functions"`
-	Tasks           []parseTask `yaml:"tasks,omitempty" bson:"tasks"`
-	ExecTimeoutSecs int         `yaml:"exec_timeout_secs,omitempty" bson:"exec_timeout_secs"`
+	Functions       map[string]*YAMLCommandSet `yaml:"functions,omitempty" bson:"functions"`
+	Tasks           []parseTask                `yaml:"tasks,omitempty" bson:"tasks"`
+	ExecTimeoutSecs int                        `yaml:"exec_timeout_secs,omitempty" bson:"exec_timeout_secs"`
 }
 
 // Unmarshalled from the "tasks" list in the project file
@@ -38,7 +38,7 @@ type parseTask struct {
 	ExecTimeoutSecs int                 `yaml:"exec_timeout_secs,omitempty" bson:"exec_timeout_secs"`
 	DisableCleanup  bool                `yaml:"disable_cleanup,omitempty" bson:"disable_cleanup,omitempty"`
 	DependsOn       parseDependencies   `yaml:"depends_on,omitempty" bson:"depends_on"`
-	Requires        []TaskRequirement   `yaml:"requires,omitempty" bson:"requires"`
+	Requires        []TaskSelector      `yaml:"requires,omitempty" bson:"requires"`
 	Commands        []PluginCommandConf `yaml:"commands,omitempty" bson:"commands"`
 	Tags            []string            `yaml:"tags,omitempty" bson:"tags"`
 
@@ -73,9 +73,6 @@ func (pds *parseDependencies) UnmarshalYAML(unmarshal func(interface{}) error) e
 	return nil
 }
 
-// UnmarshalYAML allows tasks to be referenced as single selector strings.
-// This works by first attempting to unmarshal the YAML into a string
-// and then falling back to the TaskDependency struct.
 func (pd *parseDependency) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal(&pd.TaskSelector); err != nil {
 		return err
@@ -137,6 +134,11 @@ func LoadProjectInto(data []byte, identifier string, project *Project) error {
 	project.Identifier = identifier
 	return nil
 }
+
+// // // //
+// // // //
+// // // //
+// // // //
 
 type projectParser struct {
 	p        *parseProject
