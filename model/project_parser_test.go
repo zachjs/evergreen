@@ -140,7 +140,6 @@ buildvariants:
     priority: 77
 `
 			pass := pp.createIntermediateProject([]byte(simple))
-			Println(pp.errors)
 			So(pass, ShouldBeTrue)
 			So(len(pp.errors), ShouldEqual, 0)
 			So(len(pp.warnings), ShouldEqual, 0)
@@ -167,7 +166,6 @@ buildvariants:
     requires: "t4"
 `
 			pass := pp.createIntermediateProject([]byte(simple))
-			Println(pp.errors)
 			So(pass, ShouldBeTrue)
 			So(len(pp.errors), ShouldEqual, 0)
 			So(len(pp.warnings), ShouldEqual, 0)
@@ -177,6 +175,29 @@ buildvariants:
 			So(bv.Tasks[1].Name, ShouldEqual, "t2")
 			So(bv.Tasks[1].DependsOn[0].TaskSelector, ShouldResemble, TaskSelector{Name: "t3"})
 			So(bv.Tasks[1].Requires[0], ShouldResemble, TaskSelector{Name: "t4"})
+		})
+		Convey("a file with single BVTs should parse", func() {
+			simple := `
+buildvariants:
+- name: "v1"
+  tasks: "*"
+- name: "v2"
+  tasks:
+    name: "t1"
+`
+			pass := pp.createIntermediateProject([]byte(simple))
+			So(pass, ShouldBeTrue)
+			So(len(pp.errors), ShouldEqual, 0)
+			So(len(pp.warnings), ShouldEqual, 0)
+			So(len(pp.p.BuildVariants), ShouldEqual, 2)
+			bv1 := pp.p.BuildVariants[0]
+			bv2 := pp.p.BuildVariants[1]
+			So(bv1.Name, ShouldEqual, "v1")
+			So(bv2.Name, ShouldEqual, "v2")
+			So(len(bv1.Tasks), ShouldEqual, 1)
+			So(bv1.Tasks[0].Name, ShouldEqual, "*")
+			So(len(bv2.Tasks), ShouldEqual, 1)
+			So(bv2.Tasks[0].Name, ShouldEqual, "t1")
 		})
 	})
 }

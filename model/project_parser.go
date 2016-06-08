@@ -148,7 +148,7 @@ type parseBV struct {
 	BatchTime   *int              `yaml:"batchtime"`
 	Stepback    *bool             `yaml:"stepback"`
 	RunOn       []string          `yaml:"run_on"` //TODO make this a StringSlice
-	Tasks       []parseBVTask     `yaml:"tasks"`
+	Tasks       parseBVTasks      `yaml:"tasks"`
 }
 
 type parseBVTask struct {
@@ -182,6 +182,23 @@ func (pbvt *parseBVTask) UnmarshalYAML(unmarshal func(interface{}) error) error 
 		return fmt.Errorf("task selector must have a name")
 	}
 	*pbvt = parseBVTask(cpy)
+	return nil
+}
+
+type parseBVTasks []parseBVTask
+
+func (pbvts *parseBVTasks) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	// first, attempt to unmarshal just a selector string
+	var single parseBVTask
+	if err := unmarshal(&single); err == nil {
+		*pbvts = parseBVTasks([]parseBVTask{single})
+		return nil
+	}
+	var slice []parseBVTask
+	if err := unmarshal(&slice); err != nil {
+		return err
+	}
+	*pbvts = parseBVTasks(slice)
 	return nil
 }
 
