@@ -201,3 +201,101 @@ buildvariants:
 		})
 	})
 }
+
+func TestTranslateDependsOn(t *testing.T) {
+	Convey("With an intermediate parseProject", t, func() {
+		pp := &projectParser{p: &parserProject{}}
+		Convey("a tag-free dependency config should be unchanged", func() {
+			pp.p.Tasks = []parserTask{
+				{Name: "t1"},
+				{Name: "t2"},
+				{Name: "t3", DependsOn: parserDependencies{
+					{TaskSelector: TaskSelector{Name: "t1"}},
+					{TaskSelector: TaskSelector{Name: "t2", Variant: "v1"}}},
+				},
+			}
+			out := pp.translateProject()
+			So(pp.errors, ShouldBeNil)
+			So(pp.warnings, ShouldBeNil)
+			So(out, ShouldNotBeNil)
+			deps := out.Tasks[2].DependsOn
+			So(deps[0].Name, ShouldEqual, "t1")
+			So(deps[1].Name, ShouldEqual, "t2")
+			So(deps[1].Variant, ShouldEqual, "v1")
+		})
+		Convey("a dependency with tag selectors should evaluate", func() {
+			pp.p.Tasks = []parserTask{
+				{Name: "t1", Tags: []string{"a", "b"}},
+				{Name: "t2", Tags: []string{"a", "c"}},
+				{Name: "t3", DependsOn: parserDependencies{
+					{TaskSelector: TaskSelector{Name: ".b"}},
+					{TaskSelector: TaskSelector{Name: ".a !.b", Variant: "v1"}}},
+				},
+			}
+			out := pp.translateProject()
+			So(pp.errors, ShouldBeNil)
+			So(pp.warnings, ShouldBeNil)
+			So(out, ShouldNotBeNil)
+			deps := out.Tasks[2].DependsOn
+			So(deps[0].Name, ShouldEqual, "t1")
+			So(deps[1].Name, ShouldEqual, "t2")
+			So(deps[1].Variant, ShouldEqual, "v1")
+		})
+		Convey("a dependency with erroneous selectors should fail", func() {
+			pp.p.Tasks = []parserTask{
+				{Name: "t1", Tags: []string{"a", "b"}},
+				{Name: "t2", Tags: []string{"a", "c"}},
+				{Name: "t3", DependsOn: parserDependencies{
+					{TaskSelector: TaskSelector{Name: ".cool"}},
+					{TaskSelector: TaskSelector{Name: "!!.cool"}},                //illegal selector
+					{TaskSelector: TaskSelector{Name: "!.c !.b", Variant: "v1"}}, //no matching tasks
+					{TaskSelector: TaskSelector{Name: "t1"}, Status: "*"},        //valid, but:
+					{TaskSelector: TaskSelector{Name: ".b"}},                     //conflicts with above
+				}},
+			}
+			out := pp.translateProject()
+			So(len(pp.errors), ShouldEqual, 3)
+			So(pp.warnings, ShouldBeNil)
+			So(out, ShouldNotBeNil)
+		})
+	})
+}
+
+func TestTranslateRequires(t *testing.T) {
+	Convey("With an intermediate parseProject", t, func() {
+		pp := &projectParser{p: &parserProject{}}
+		Convey("a task with valid requirements should succeed", func() {
+			pp.p.Tasks = []parserTask{
+				{Name: "t1"},
+				{Name: "t2"},
+				{Name: "t3", Requires: TaskSelectors{
+					{Name: "t1"},
+					{Name: "t2", Variant: "v1"},
+				}},
+			}
+			out := pp.translateProject()
+			So(pp.errors, ShouldBeNil)
+			So(pp.warnings, ShouldBeNil)
+			So(out, ShouldNotBeNil)
+			reqs := out.Tasks[2].Requires
+			So(reqs[0].Name, ShouldEqual, "t1")
+			So(reqs[1].Name, ShouldEqual, "t2")
+			So(reqs[1].Variant, ShouldEqual, "v1")
+		})
+		Convey("a task with erroneous requirements should fail", func() {
+			pp.p.Tasks = []parserTask{
+				{Name: "t1"},
+				{Name: "t2", Tags: []string{"taggy"}},
+				{Name: "t3", Requires: TaskSelectors{
+					{Name: "!!!!!"},                     //illegal selector
+					{Name: ".taggy !t2", Variant: "v1"}, //nothing returned
+					{Name: "t1 t2"},                     //nothing returned
+				}},
+			}
+			out := pp.translateProject()
+			So(len(pp.errors), ShouldEqual, 3)
+			So(pp.warnings, ShouldBeNil)
+			So(out, ShouldNotBeNil)
+		})
+	})
+}

@@ -295,9 +295,8 @@ func (pp *projectParser) expandTasks(pts []parserTask) []ProjectTask {
 			Tags:            pt.Tags,
 			Stepback:        pt.Stepback,
 		}
-		//deependson
 		t.DependsOn = pp.evaluateDependsOn(pt.DependsOn)
-		//requires
+		t.Requires = pp.evaluateRequires(pt.Requires)
 
 		tasks = append(tasks, t)
 	}
@@ -352,5 +351,26 @@ func (pp *projectParser) evaluateDependsOn(deps []parserDependency) []TaskDepend
 		}
 	}
 	return newDeps
+}
 
+func (pp *projectParser) evaluateRequires(reqs []TaskSelector) []TaskRequirement {
+	newReqs := []TaskRequirement{}
+	newReqsByNameAndVariant := map[TVPair]struct{}{}
+	for _, r := range reqs {
+		names, err := pp.taskEval.evalSelector(ParseSelector(r.Name))
+		if err != nil {
+			pp.appendError(err.Error())
+			continue
+		}
+		for _, name := range names {
+			newReq := TaskRequirement{Name: name, Variant: r.Variant}
+			newReq.Name = name
+			// add the new req if it doesn't already exists (we must avoid duplicates)
+			if _, ok := newReqsByNameAndVariant[TVPair{newReq.Variant, newReq.Name}]; !ok {
+				newReqs = append(newReqs, newReq)
+				newReqsByNameAndVariant[TVPair{newReq.Variant, newReq.Name}] = struct{}{}
+			}
+		}
+	}
+	return newReqs
 }
