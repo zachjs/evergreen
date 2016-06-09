@@ -122,26 +122,61 @@ func stringToCriterion(s string) selectCriterion {
 
 // Task Selector Logic
 
+type taskInfo struct {
+	Name string
+	Tags []string
+}
+
 // taskSelectorEvaluator expands tags used in build variant definitions.
 type taskSelectorEvaluator struct {
-	tasks  []ProjectTask
-	byName map[string]*ProjectTask
-	byTag  map[string][]*ProjectTask
+	tasks  []taskInfo
+	byName map[string]*taskInfo
+	byTag  map[string][]*taskInfo
 }
 
 // NewTaskSelectorEvaluator returns a new taskSelectorEvaluator.
 func NewTaskSelectorEvaluator(tasks []ProjectTask) *taskSelectorEvaluator {
 	// cache everything
-	byName := map[string]*ProjectTask{}
-	byTag := map[string][]*ProjectTask{}
-	for i, t := range tasks {
-		byName[t.Name] = &tasks[i]
+	byName := map[string]*taskInfo{}
+	byTag := map[string][]*taskInfo{}
+	ts := []taskInfo{}
+	for _, t := range tasks {
+		info := taskInfo{
+			Name: t.Name,
+			Tags: t.Tags,
+		}
+		ts = append(ts, info)
+		byName[t.Name] = &info
 		for _, tag := range t.Tags {
-			byTag[tag] = append(byTag[tag], &tasks[i])
+			byTag[tag] = append(byTag[tag], &info)
 		}
 	}
 	return &taskSelectorEvaluator{
-		tasks:  tasks,
+		tasks:  ts,
+		byName: byName,
+		byTag:  byTag,
+	}
+}
+
+// NewTaskSelectorEvaluator returns a new taskSelectorEvaluator.
+func NewParserTaskSelectorEvaluator(tasks []parserTask) *taskSelectorEvaluator {
+	// cache everything
+	byName := map[string]*taskInfo{}
+	byTag := map[string][]*taskInfo{}
+	ts := []taskInfo{}
+	for _, t := range tasks {
+		info := taskInfo{
+			Name: t.Name,
+			Tags: t.Tags,
+		}
+		ts = append(ts, info)
+		byName[t.Name] = &info
+		for _, tag := range t.Tags {
+			byTag[tag] = append(byTag[tag], &info)
+		}
+	}
+	return &taskSelectorEvaluator{
+		tasks:  ts,
 		byName: byName,
 		byTag:  byTag,
 	}
@@ -191,6 +226,7 @@ func (tse *taskSelectorEvaluator) EvaluateTasks(bvTasks []BuildVariantTask) ([]B
 	return newTasks, nil
 }
 
+// XXX deprecated
 // EvaluateDeps expands selectors in the given dependency definitions.
 func (tse *taskSelectorEvaluator) EvaluateDeps(deps []TaskDependency) ([]TaskDependency, error) {
 	// This is almost an exact copy of EvaluateTasks.
@@ -313,7 +349,7 @@ func (tse *taskSelectorEvaluator) evalCriterion(sc selectCriterion) ([]string, e
 			return nil, fmt.Errorf("no tasks have the tag '%v'", sc.name)
 		}
 		// compare tasks by address to avoid the ones with a negated tag
-		illegalTasks := map[*ProjectTask]bool{}
+		illegalTasks := map[*taskInfo]bool{}
 		for _, taskPtr := range tasks {
 			illegalTasks[taskPtr] = true
 		}

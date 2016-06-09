@@ -2,11 +2,12 @@ package model
 
 import (
 	"fmt"
+	"reflect"
 
 	"gopkg.in/yaml.v2"
 )
 
-type parseProject struct {
+type parserProject struct {
 	Enabled         bool                       `yaml:"enabled"`
 	Stepback        bool                       `yaml:"stepback"`
 	DisableCleanup  bool                       `yaml:"disable_cleanup"`
@@ -25,55 +26,48 @@ type parseProject struct {
 	Timeout         *YAMLCommandSet            `yaml:"timeout"`
 	CallbackTimeout int                        `yaml:"callback_timeout_secs"`
 	Modules         []Module                   `yaml:"modules"`
-	BuildVariants   []parseBV                  `yaml:"buildvariants"`
+	BuildVariants   []parserBV                 `yaml:"buildvariants"`
 	Functions       map[string]*YAMLCommandSet `yaml:"functions"`
-	Tasks           []parseTask                `yaml:"tasks"`
+	Tasks           []parserTask               `yaml:"tasks"`
 	ExecTimeoutSecs int                        `yaml:"exec_timeout_secs"`
 }
 
-// Unmarshalled from the "tasks" list in the project file
-type parseTask struct {
+type parserTask struct {
 	Name            string              `yaml:"name"`
 	Priority        int64               `yaml:"priority"`
 	ExecTimeoutSecs int                 `yaml:"exec_timeout_secs"`
 	DisableCleanup  bool                `yaml:"disable_cleanup"`
-	DependsOn       parseDependencies   `yaml:"depends_on"`
+	DependsOn       parserDependencies  `yaml:"depends_on"`
 	Requires        TaskSelectors       `yaml:"requires"`
 	Commands        []PluginCommandConf `yaml:"commands"`
 	Tags            []string            `yaml:"tags"`
-
-	// Use a *bool so that there are 3 possible states:
-	//   1. nil   = not overriding the project setting (default)
-	//   2. true  = overriding the project setting with true
-	//   3. false = overriding the project setting with false
-	Patchable *bool `yaml:"patchable"`
-	Stepback  *bool `yaml:"stepback"`
+	Stepback        *bool               `yaml:"stepback"`
 }
 
-type parseDependency struct {
+type parserDependency struct {
 	TaskSelector
 	Status        string `yaml:"status"`
 	PatchOptional bool   `yaml:"patch_optional"`
 }
 
-type parseDependencies []parseDependency
+type parserDependencies []parserDependency
 
-func (pds *parseDependencies) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (pds *parserDependencies) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// first check if we are only doing one dependency
-	pd := parseDependency{}
+	pd := parserDependency{}
 	if err := unmarshal(&pd); err == nil {
-		*pds = parseDependencies([]parseDependency{pd})
+		*pds = parserDependencies([]parserDependency{pd})
 		return nil
 	}
-	var pdsCopy []parseDependency
+	var pdsCopy []parserDependency
 	if err := unmarshal(&pdsCopy); err != nil {
 		return err
 	}
-	*pds = parseDependencies(pdsCopy)
+	*pds = parserDependencies(pdsCopy)
 	return nil
 }
 
-func (pd *parseDependency) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (pd *parserDependency) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal(&pd.TaskSelector); err != nil {
 		return err
 	}
@@ -138,7 +132,7 @@ func (ts *TaskSelector) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-type parseBV struct {
+type parserBV struct {
 	Name        string            `yaml:"name"`
 	DisplayName string            `yaml:"display_name"`
 	Expansions  map[string]string `yaml:"expansions"`
@@ -148,21 +142,21 @@ type parseBV struct {
 	BatchTime   *int              `yaml:"batchtime"`
 	Stepback    *bool             `yaml:"stepback"`
 	RunOn       []string          `yaml:"run_on"` //TODO make this a StringSlice
-	Tasks       parseBVTasks      `yaml:"tasks"`
+	Tasks       parserBVTasks     `yaml:"tasks"`
 }
 
-type parseBVTask struct {
-	Name            string            `yaml:"name"`
-	Patchable       *bool             `yaml:"patchable"`
-	Priority        int64             `yaml:"priority"`
-	DependsOn       parseDependencies `yaml:"depends_on"`
-	Requires        TaskSelectors     `yaml:"requires"`
-	ExecTimeoutSecs int               `yaml:"exec_timeout_secs"`
-	Stepback        *bool             `yaml:"stepback"`
-	Distros         []string          `yaml:"distros"` //TODO accept "run_on" here
+type parserBVTask struct {
+	Name            string             `yaml:"name"`
+	Patchable       *bool              `yaml:"patchable"`
+	Priority        int64              `yaml:"priority"`
+	DependsOn       parserDependencies `yaml:"depends_on"`
+	Requires        TaskSelectors      `yaml:"requires"`
+	ExecTimeoutSecs int                `yaml:"exec_timeout_secs"`
+	Stepback        *bool              `yaml:"stepback"`
+	Distros         []string           `yaml:"distros"` //TODO accept "run_on" here
 }
 
-func (pbvt *parseBVTask) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (pbvt *parserBVTask) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// first, attempt to unmarshal just a selector string
 	var onlySelector string
 	if err := unmarshal(&onlySelector); err == nil {
@@ -173,7 +167,7 @@ func (pbvt *parseBVTask) UnmarshalYAML(unmarshal func(interface{}) error) error 
 	}
 	// we define a new type so that we can grab the yaml struct tags without the struct methods,
 	// preventing infinte recursion on the UnmarshalYAML() method.
-	type copyType parseBVTask
+	type copyType parserBVTask
 	var cpy copyType
 	if err := unmarshal(&cpy); err != nil {
 		return err
@@ -181,24 +175,24 @@ func (pbvt *parseBVTask) UnmarshalYAML(unmarshal func(interface{}) error) error 
 	if cpy.Name == "" {
 		return fmt.Errorf("task selector must have a name")
 	}
-	*pbvt = parseBVTask(cpy)
+	*pbvt = parserBVTask(cpy)
 	return nil
 }
 
-type parseBVTasks []parseBVTask
+type parserBVTasks []parserBVTask
 
-func (pbvts *parseBVTasks) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (pbvts *parserBVTasks) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// first, attempt to unmarshal just a selector string
-	var single parseBVTask
+	var single parserBVTask
 	if err := unmarshal(&single); err == nil {
-		*pbvts = parseBVTasks([]parseBVTask{single})
+		*pbvts = parserBVTasks([]parserBVTask{single})
 		return nil
 	}
-	var slice []parseBVTask
+	var slice []parserBVTask
 	if err := unmarshal(&slice); err != nil {
 		return err
 	}
-	*pbvts = parseBVTasks(slice)
+	*pbvts = parserBVTasks(slice)
 	return nil
 }
 
@@ -222,16 +216,19 @@ func LoadProjectInto(data []byte, identifier string, project *Project) error {
 }
 
 type projectParser struct {
-	p        *parseProject
+	p        *parserProject
+	taskEval *taskSelectorEvaluator
 	errors   []string
 	warnings []string
 }
 
 func (pp *projectParser) FromYAML(yml []byte) (*Project, []string, []string) {
 	// create intermediate project
-	//   handle special fields
-	//   handle boring fields
-	// expand things
+	if !pp.createIntermediateProject(yml) {
+		return nil, pp.errors, pp.warnings
+	}
+	// copy and expand things
+
 	//   create definitions map and stub matrix variants
 	//   expand tasks
 	//   create variants
@@ -243,12 +240,117 @@ func (pp *projectParser) appendError(err string) {
 	pp.errors = append(pp.errors, err)
 }
 
+func (pp *projectParser) hasErrors() bool {
+	return len(pp.errors) > 0
+}
+
 func (pp *projectParser) createIntermediateProject(yml []byte) bool {
-	pp.p = &parseProject{}
+	pp.p = &parserProject{}
 	err := yaml.Unmarshal(yml, pp.p)
 	if err != nil {
 		pp.appendError(err.Error())
 		return false
 	}
 	return true
+}
+
+func (pp *projectParser) translateProject() *Project {
+	// Transfer top level fields
+	proj := &Project{
+		Enabled:         pp.p.Enabled,
+		Stepback:        pp.p.Stepback,
+		DisableCleanup:  pp.p.DisableCleanup,
+		BatchTime:       pp.p.BatchTime,
+		Owner:           pp.p.Owner,
+		Repo:            pp.p.Repo,
+		RemotePath:      pp.p.RemotePath,
+		RepoKind:        pp.p.RepoKind,
+		Branch:          pp.p.Branch,
+		Identifier:      pp.p.Identifier,
+		DisplayName:     pp.p.DisplayName,
+		CommandType:     pp.p.CommandType,
+		Ignore:          pp.p.Ignore,
+		Pre:             pp.p.Pre,
+		Post:            pp.p.Post,
+		Timeout:         pp.p.Timeout,
+		CallbackTimeout: pp.p.CallbackTimeout,
+		Modules:         pp.p.Modules, //TODO--it's okay to pass by ref here, yeah?
+		Functions:       pp.p.Functions,
+		ExecTimeoutSecs: pp.p.ExecTimeoutSecs,
+	}
+	pp.taskEval = NewParserTaskSelectorEvaluator(pp.p.Tasks)
+	proj.Tasks = pp.expandTasks(pp.p.Tasks)
+	return proj
+}
+
+func (pp *projectParser) expandTasks(pts []parserTask) []ProjectTask {
+	tasks := []ProjectTask{}
+	for _, pt := range pts {
+		t := ProjectTask{
+			Name:            pt.Name,
+			Priority:        pt.Priority,
+			ExecTimeoutSecs: pt.ExecTimeoutSecs,
+			DisableCleanup:  pt.DisableCleanup,
+			Commands:        pt.Commands,
+			Tags:            pt.Tags,
+			Stepback:        pt.Stepback,
+		}
+		//deependson
+		t.DependsOn = pp.evaluateDependsOn(pt.DependsOn)
+		//requires
+
+		tasks = append(tasks, t)
+	}
+	return tasks
+}
+
+func (pp *projectParser) evaluateDependsOn(deps []parserDependency) []TaskDependency {
+	// This is almost an exact copy of EvaluateTasks.
+	newDeps := []TaskDependency{}
+	newDepsByNameAndVariant := map[TVPair]TaskDependency{}
+	for _, d := range deps {
+		if d.Name == AllDependencies {
+			// * is a special case for dependencies //TODO--should it be?
+			allDep := TaskDependency{
+				Name:          AllDependencies,
+				Variant:       d.Variant,
+				Status:        d.Status,
+				PatchOptional: d.PatchOptional,
+			}
+			newDeps = append(newDeps, allDep)
+			newDepsByNameAndVariant[TVPair{d.Variant, d.Name}] = allDep
+			continue
+		}
+		names, err := pp.taskEval.evalSelector(ParseSelector(d.Name))
+		if err != nil {
+			pp.appendError(err.Error())
+			continue
+		}
+		// create new dependency definitions--duplicates must have the same status requirements
+		for _, name := range names {
+			// create a newDep by copying the dep that selected it,
+			// so we can preserve the "Variant" and "Status" field.
+			newDep := TaskDependency{
+				Name:          name,
+				Variant:       d.Variant,
+				Status:        d.Status,
+				PatchOptional: d.PatchOptional,
+			}
+			newDep.Name = name
+			// add the new dep if it doesn't already exists (we must avoid conflicting status fields)
+			if oldDep, ok := newDepsByNameAndVariant[TVPair{newDep.Variant, newDep.Name}]; !ok {
+				newDeps = append(newDeps, newDep)
+				newDepsByNameAndVariant[TVPair{newDep.Variant, newDep.Name}] = newDep
+			} else {
+				// it's already in the new list, so we check to make sure the status definitions match.
+				if !reflect.DeepEqual(newDep, oldDep) {
+					pp.appendError(fmt.Sprintf(
+						"conflicting definitions of dependency '%v': %v != %v", name, newDep, oldDep))
+					continue
+				}
+			}
+		}
+	}
+	return newDeps
+
 }
