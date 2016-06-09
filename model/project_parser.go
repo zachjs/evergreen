@@ -297,10 +297,30 @@ func (pp *projectParser) expandTasks(pts []parserTask) []ProjectTask {
 		}
 		t.DependsOn = pp.evaluateDependsOn(pt.DependsOn)
 		t.Requires = pp.evaluateRequires(pt.Requires)
-
 		tasks = append(tasks, t)
 	}
 	return tasks
+}
+
+func (pp *projectParser) expandBuildVariants(pbvs []parserBV) []BuildVariant {
+	bvs := []BuildVariant{}
+	for _, pbv := range pbvs {
+		bv := BuildVariant{
+			DisplayName: pbv.DisplayName,
+			Name:        pbv.Name,
+			Expansions:  pbv.Expansions,
+			Modules:     pbv.Modules,
+			Disabled:    pbv.Disabled,
+			Push:        pbv.Push,
+			BatchTime:   pbv.BatchTime,
+			Stepback:    pbv.Stepback,
+			RunOn:       pbv.RunOn,
+		}
+		// eval bvts
+		//TODO get bvts evaluated, test this mofo
+		bvs = append(bvs, bv)
+	}
+	return bvs
 }
 
 func (pp *projectParser) evaluateDependsOn(deps []parserDependency) []TaskDependency {
