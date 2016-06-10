@@ -274,6 +274,7 @@ func (pp *projectParser) translateProject() *Project {
 	}
 	pp.taskEval = NewParserTaskSelectorEvaluator(pp.p.Tasks)
 	proj.Tasks = pp.evaluateTasks(pp.p.Tasks)
+	proj.BuildVariants = pp.evaluateBuildVariants(pp.p.BuildVariants)
 	return proj
 }
 
