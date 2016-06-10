@@ -1,6 +1,8 @@
 package model
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	. "github.com/smartystreets/goconvey/convey"
@@ -333,6 +335,94 @@ func TestTranslateBuildVariants(t *testing.T) {
 			So(bvts[2].Requires[0].Name, ShouldEqual, "t1")
 		})
 		Convey("a task with erroneous requirements should fail", func() {
+		})
+	})
+}
+
+func parserTaskSelectorTaskEval(pp *projectParser, tasks parserBVTasks, expected []BuildVariantTask) {
+	names := []string{}
+	exp := []string{}
+	for _, t := range tasks {
+		names = append(names, t.Name)
+	}
+	for _, e := range expected {
+		exp = append(exp, e.Name)
+	}
+	Convey(fmt.Sprintf("tasks [%v] should evaluate to [%v]",
+		strings.Join(names, ", "), strings.Join(exp, ", ")), func() {
+		ts := pp.evaluateBVTasks(tasks)
+		if expected != nil {
+			So(pp.errors, ShouldBeNil)
+		} else {
+			So(pp.errors, ShouldNotBeNil)
+		}
+		So(len(ts), ShouldEqual, len(expected))
+		for _, e := range expected {
+			exists := false
+			for _, t := range ts {
+				if t.Name == e.Name && t.Priority == e.Priority && len(t.DependsOn) == len(e.DependsOn) {
+					exists = true
+				}
+			}
+			So(exists, ShouldBeTrue)
+		}
+	})
+}
+
+func TestParserTaskSelectorEvaluation(t *testing.T) {
+	Convey("With a colorful set of ProjectTasks", t, func() {
+		taskDefs := []parserTask{
+			{Name: "red", Tags: []string{"primary", "warm"}},
+			{Name: "orange", Tags: []string{"secondary", "warm"}},
+			{Name: "yellow", Tags: []string{"primary", "warm"}},
+			{Name: "green", Tags: []string{"secondary", "cool"}},
+			{Name: "blue", Tags: []string{"primary", "cool"}},
+			{Name: "purple", Tags: []string{"secondary", "cool"}},
+			{Name: "brown", Tags: []string{"tertiary"}},
+			{Name: "black", Tags: []string{"special"}},
+			{Name: "white", Tags: []string{"special"}},
+		}
+
+		Convey("a project parser", func() {
+			pp := &projectParser{
+				taskEval: NewParserTaskSelectorEvaluator(taskDefs),
+			}
+			Convey("should evaluate valid tasks pointers properly", func() {
+				parserTaskSelectorTaskEval(pp,
+					parserBVTasks{{Name: "white"}},
+					[]BuildVariantTask{{Name: "white"}})
+				parserTaskSelectorTaskEval(pp,
+					parserBVTasks{{Name: "red", Priority: 500}, {Name: ".secondary"}},
+					[]BuildVariantTask{{Name: "red", Priority: 500}, {Name: "orange"}, {Name: "purple"}, {Name: "green"}})
+				parserTaskSelectorTaskEval(pp,
+					parserBVTasks{
+						{Name: "orange", Distros: []string{"d1"}},
+						{Name: ".warm .secondary", Distros: []string{"d1"}}},
+					[]BuildVariantTask{{Name: "orange", Distros: []string{"d1"}}})
+				parserTaskSelectorTaskEval(pp,
+					parserBVTasks{
+						{Name: "orange", Distros: []string{"d1"}},
+						{Name: "!.warm .secondary", Distros: []string{"d1"}}},
+					[]BuildVariantTask{
+						{Name: "orange", Distros: []string{"d1"}},
+						{Name: "purple", Distros: []string{"d1"}},
+						{Name: "green", Distros: []string{"d1"}}})
+				parserTaskSelectorTaskEval(pp,
+					parserBVTasks{{Name: "*"}},
+					[]BuildVariantTask{
+						{Name: "red"}, {Name: "blue"}, {Name: "yellow"},
+						{Name: "orange"}, {Name: "purple"}, {Name: "green"},
+						{Name: "brown"}, {Name: "white"}, {Name: "black"},
+					})
+				parserTaskSelectorTaskEval(pp,
+					parserBVTasks{
+						{Name: "red", Priority: 100},
+						{Name: "!.warm .secondary", Priority: 100}},
+					[]BuildVariantTask{
+						{Name: "red", Priority: 100},
+						{Name: "purple", Priority: 100},
+						{Name: "green", Priority: 100}})
+			})
 		})
 	})
 }
