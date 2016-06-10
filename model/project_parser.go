@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"reflect"
+	"strings"
 
 	"gopkg.in/yaml.v2"
 )
@@ -202,15 +203,14 @@ func (pbvts *parserBVTasks) UnmarshalYAML(unmarshal func(interface{}) error) err
 // // // //
 
 // LoadProjectInto loads the raw data from the config file into project
-// and sets the project's identifier field to identifier. Tags are expanded.
+// and sets the project's identifier field to identifier. Tags are evaluateed.
 func LoadProjectInto(data []byte, identifier string, project *Project) error {
-	if err := yaml.Unmarshal(data, project); err != nil {
-		return fmt.Errorf("parse error unmarshalling project: %v", err)
+	pp := projectParser{}
+	p, _, errs := pp.FromYAML(data)
+	if len(errs) > 0 {
+		return fmt.Errorf("error loading project yaml: %v", strings.Join(errs, "\n\t"))
 	}
-	// expand task definitions
-	if err := project.EvaluateTags(); err != nil {
-		return fmt.Errorf("error evaluating project tags: %v", err)
-	}
+	*project = *p
 	project.Identifier = identifier
 	return nil
 }
@@ -223,17 +223,11 @@ type projectParser struct {
 }
 
 func (pp *projectParser) FromYAML(yml []byte) (*Project, []string, []string) {
-	// create intermediate project
 	if !pp.createIntermediateProject(yml) {
-		return nil, pp.errors, pp.warnings
+		return nil, pp.warnings, pp.errors
 	}
-	// copy and expand things
-
-	//   create definitions map and stub matrix variants
-	//   expand tasks
-	//   create variants
-
-	return nil, nil, nil
+	p := pp.translateProject()
+	return p, pp.warnings, pp.errors
 }
 
 func (pp *projectParser) appendError(err string) {
@@ -274,16 +268,16 @@ func (pp *projectParser) translateProject() *Project {
 		Post:            pp.p.Post,
 		Timeout:         pp.p.Timeout,
 		CallbackTimeout: pp.p.CallbackTimeout,
-		Modules:         pp.p.Modules, //TODO--it's okay to pass by ref here, yeah?
+		Modules:         pp.p.Modules,
 		Functions:       pp.p.Functions,
 		ExecTimeoutSecs: pp.p.ExecTimeoutSecs,
 	}
 	pp.taskEval = NewParserTaskSelectorEvaluator(pp.p.Tasks)
-	proj.Tasks = pp.expandTasks(pp.p.Tasks)
+	proj.Tasks = pp.evaluateTasks(pp.p.Tasks)
 	return proj
 }
 
-func (pp *projectParser) expandTasks(pts []parserTask) []ProjectTask {
+func (pp *projectParser) evaluateTasks(pts []parserTask) []ProjectTask {
 	tasks := []ProjectTask{}
 	for _, pt := range pts {
 		t := ProjectTask{
@@ -302,7 +296,7 @@ func (pp *projectParser) expandTasks(pts []parserTask) []ProjectTask {
 	return tasks
 }
 
-func (pp *projectParser) expandBuildVariants(pbvs []parserBV) []BuildVariant {
+func (pp *projectParser) evaluateBuildVariants(pbvs []parserBV) []BuildVariant {
 	bvs := []BuildVariant{}
 	for _, pbv := range pbvs {
 		bv := BuildVariant{
@@ -316,11 +310,28 @@ func (pp *projectParser) expandBuildVariants(pbvs []parserBV) []BuildVariant {
 			Stepback:    pbv.Stepback,
 			RunOn:       pbv.RunOn,
 		}
-		// eval bvts
-		//TODO get bvts evaluated, test this mofo
+		bv.Tasks = pp.evaluateBVTasks(pbv.Tasks)
 		bvs = append(bvs, bv)
 	}
 	return bvs
+}
+
+func (pp *projectParser) evaluateBVTasks(pbvts []parserBVTask) []BuildVariantTask {
+	bvts := []BuildVariantTask{}
+	for _, pt := range pbvts {
+		t := BuildVariantTask{
+			Name:            pt.Name,
+			Patchable:       pt.Patchable,
+			Priority:        pt.Priority,
+			ExecTimeoutSecs: pt.ExecTimeoutSecs,
+			Stepback:        pt.Stepback,
+			Distros:         pt.Distros,
+		}
+		t.DependsOn = pp.evaluateDependsOn(pt.DependsOn)
+		t.Requires = pp.evaluateRequires(pt.Requires)
+		bvts = append(bvts, t)
+	}
+	return bvts
 }
 
 func (pp *projectParser) evaluateDependsOn(deps []parserDependency) []TaskDependency {
