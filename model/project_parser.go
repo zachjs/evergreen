@@ -318,21 +318,44 @@ func (pp *projectParser) evaluateBuildVariants(pbvs []parserBV) []BuildVariant {
 }
 
 func (pp *projectParser) evaluateBVTasks(pbvts []parserBVTask) []BuildVariantTask {
-	bvts := []BuildVariantTask{}
+	ts := []BuildVariantTask{}
+	tasksByName := map[string]BuildVariantTask{}
 	for _, pt := range pbvts {
-		t := BuildVariantTask{
-			Name:            pt.Name,
-			Patchable:       pt.Patchable,
-			Priority:        pt.Priority,
-			ExecTimeoutSecs: pt.ExecTimeoutSecs,
-			Stepback:        pt.Stepback,
-			Distros:         pt.Distros,
+		names, err := pp.taskEval.evalSelector(ParseSelector(pt.Name))
+		if err != nil {
+			pp.appendError(err.Error())
+			continue
 		}
-		t.DependsOn = pp.evaluateDependsOn(pt.DependsOn)
-		t.Requires = pp.evaluateRequires(pt.Requires)
-		bvts = append(bvts, t)
+		// create new task definitions--duplicates must have the same status requirements
+		for _, name := range names {
+			// create a new task by copying the task that selected it,
+			// so we can preserve the "Variant" and "Status" field.
+			t := BuildVariantTask{
+				Name:            name,
+				Patchable:       pt.Patchable,
+				Priority:        pt.Priority,
+				ExecTimeoutSecs: pt.ExecTimeoutSecs,
+				Stepback:        pt.Stepback,
+				Distros:         pt.Distros,
+			}
+			t.DependsOn = pp.evaluateDependsOn(pt.DependsOn)
+			t.Requires = pp.evaluateRequires(pt.Requires)
+
+			// add the new task if it doesn't already exists (we must avoid conflicting status fields)
+			if old, ok := tasksByName[t.Name]; !ok {
+				ts = append(ts, t)
+				tasksByName[t.Name] = t
+			} else {
+				// it's already in the new list, so we check to make sure the status definitions match.
+				if !reflect.DeepEqual(t, old) {
+					pp.appendError(fmt.Sprintf(
+						"conflicting definitions of build variant tasks '%v': %v != %v", name, t, old))
+					continue
+				}
+			}
+		}
 	}
-	return bvts
+	return ts
 }
 
 func (pp *projectParser) evaluateDependsOn(deps []parserDependency) []TaskDependency {

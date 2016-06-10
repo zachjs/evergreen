@@ -226,7 +226,8 @@ func TestTranslateDependsOn(t *testing.T) {
 		Convey("a dependency with tag selectors should evaluate", func() {
 			pp.p.Tasks = []parserTask{
 				{Name: "t1", Tags: []string{"a", "b"}},
-				{Name: "t2", Tags: []string{"a", "c"}},
+				{Name: "t2", Tags: []string{"a", "c"}, DependsOn: parserDependencies{
+					{TaskSelector: TaskSelector{Name: "*"}}}},
 				{Name: "t3", DependsOn: parserDependencies{
 					{TaskSelector: TaskSelector{Name: ".b"}},
 					{TaskSelector: TaskSelector{Name: ".a !.b", Variant: "v1"}}},
@@ -236,6 +237,7 @@ func TestTranslateDependsOn(t *testing.T) {
 			So(pp.errors, ShouldBeNil)
 			So(pp.warnings, ShouldBeNil)
 			So(out, ShouldNotBeNil)
+			So(out.Tasks[1].DependsOn[0].Name, ShouldEqual, "*")
 			deps := out.Tasks[2].DependsOn
 			So(deps[0].Name, ShouldEqual, "t1")
 			So(deps[1].Name, ShouldEqual, "t2")
@@ -296,6 +298,41 @@ func TestTranslateRequires(t *testing.T) {
 			So(len(pp.errors), ShouldEqual, 3)
 			So(pp.warnings, ShouldBeNil)
 			So(out, ShouldNotBeNil)
+		})
+	})
+}
+
+func TestTranslateBuildVariants(t *testing.T) {
+	Convey("With an intermediate parseProject", t, func() {
+		pp := &projectParser{p: &parserProject{}}
+		Convey("a project with valid variant tasks should succeed", func() {
+			pp.p.Tasks = []parserTask{
+				{Name: "t1"},
+				{Name: "t2", Tags: []string{"a", "z"}},
+				{Name: "t3", Tags: []string{"a", "b"}},
+			}
+			pp.p.BuildVariants = []parserBV{{
+				Name: "v1",
+				Tasks: parserBVTasks{
+					{Name: "t1"},
+					{Name: ".z", DependsOn: parserDependencies{
+						{TaskSelector: TaskSelector{Name: ".b"}}}},
+					{Name: "* !t1 !t2", Requires: TaskSelectors{{Name: "!.a"}}},
+				},
+			}}
+
+			out := pp.translateProject()
+			So(pp.errors, ShouldBeNil)
+			So(pp.warnings, ShouldBeNil)
+			So(out, ShouldNotBeNil)
+			bvts := out.BuildVariants[0].Tasks
+			So(bvts[0].Name, ShouldEqual, "t1")
+			So(bvts[1].Name, ShouldEqual, "t2")
+			So(bvts[2].Name, ShouldEqual, "t3")
+			So(bvts[1].DependsOn[0].Name, ShouldEqual, "t3")
+			So(bvts[2].Requires[0].Name, ShouldEqual, "t1")
+		})
+		Convey("a task with erroneous requirements should fail", func() {
 		})
 	})
 }
