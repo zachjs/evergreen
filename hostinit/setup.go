@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"time"
@@ -538,6 +539,12 @@ func (init *HostInit) fetchRemoteTaskData(taskId, cliPath, confPath string, targ
 	// ssh -f -N -T -R 8080:localhost:8080 -o UserKnownHostsFile=/dev/null
 	// ... or, add a time.Sleep() here that gives you enough time to log in and edit the config
 	// on the spawnhost manually.
+	out, err := exec.Command("ssh", "-f", "-N", "-T", "-R", "8080:localhost:8080", "-o", "UserKnownHostsFile=/dev/null", "-i", "/Users/michaelobrien/.ssh/mci.pem", fmt.Sprintf("%s@%s", target.User, hostSSHInfo.Hostname))
+	fmt.Println("got result from tunnel command: ", string(out), err)
+	if err != nil {
+		fmt.Println("do the tunnel yourself.")
+		time.Sleep(20 * time.Second)
+	}
 
 	cmdOutput := &util.CappedWriter{&bytes.Buffer{}, 1024 * 1024}
 	makeShellCmd := &command.RemoteCommand{
