@@ -151,7 +151,7 @@ mciModule.controller('SpawnedHostsCtrl', ['$scope','$window', '$timeout', 'mciSp
       mciSpawnRestService.spawnHost(
         $scope.spawnInfo, {}, {
           success: function(data, status) {
-            window.location.reload(true);
+            window.location.href = "/spawn";
           },
           error: function(jqXHR, status, errorThrown) {
             $scope.spawnReqSent = false;
@@ -167,7 +167,7 @@ mciModule.controller('SpawnedHostsCtrl', ['$scope','$window', '$timeout', 'mciSp
         $scope.curHostData.id,
         $scope.curHostData.password, {}, {
           success: function (data, status) {
-            window.location.reload(true);
+            window.location.href = "/spawn";
           },
           error: function (jqXHR, status, errorThrown) {
             notificationService.pushNotification('Error setting host RDP password: ' + jqXHR,'errorHeader');
@@ -182,7 +182,7 @@ mciModule.controller('SpawnedHostsCtrl', ['$scope','$window', '$timeout', 'mciSp
         $scope.curHostData.id,
         $scope.extensionLength.hours.toString(), {}, {
           success: function (data, status) {
-            window.location.reload(true);
+            window.location.href = "/spawn";
           },
           error: function (jqXHR, status, errorThrown) {
             notificationService.pushNotification('Error extending host expiration: ' + jqXHR,'errorHeader');
@@ -196,7 +196,7 @@ mciModule.controller('SpawnedHostsCtrl', ['$scope','$window', '$timeout', 'mciSp
         'terminate',
         $scope.curHostData.id, {}, {
           success: function(data, status) {
-            window.location.reload(true);
+            window.location.href = "/spawn";
           },
           error: function(jqXHR, status, errorThrown) {
             notificationService.pushNotification('Error terminating host: ' + jqXHR,'errorHeader');

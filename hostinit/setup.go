@@ -14,10 +14,10 @@ import (
 	"github.com/10gen-labs/slogger/v1"
 	"github.com/evergreen-ci/evergreen"
 	"github.com/evergreen-ci/evergreen/alerts"
-	"github.com/evergreen-ci/evergreen/cli"
 	"github.com/evergreen-ci/evergreen/cloud"
 	"github.com/evergreen-ci/evergreen/cloud/providers"
 	"github.com/evergreen-ci/evergreen/command"
+	"github.com/evergreen-ci/evergreen/model"
 	"github.com/evergreen-ci/evergreen/model/event"
 	"github.com/evergreen-ci/evergreen/model/host"
 	"github.com/evergreen-ci/evergreen/model/user"
@@ -89,7 +89,7 @@ func (init *HostInit) setupReadyHosts() error {
 		wg.Add(1)
 		go func(h host.Host) {
 
-			if err := init.ProvisionHost(&h); err != nil {
+			if err := init.ProvisionHost(&h, ProvisionOptions{}); err != nil {
 				evergreen.Logger.Logf(slogger.ERROR, "Error provisioning host %v: %v", h.Id, err)
 
 				// notify the admins of the failure
@@ -310,8 +310,22 @@ func (init *HostInit) buildSetupScript(h *host.Host) (string, error) {
 	return setupScript, err
 }
 
+//
+type ProvisionOptions struct {
+	// LoadBinary indicates (if set) that while provisioning the host, the CLI binary should
+	// be placed onto the host after startup.
+	LoadCLI bool
+
+	// TaskId if non-empty will trigger the CLI tool to fetch source and artifacts for the given task.
+	// Ignored if LoadCLI is false.
+	TaskId string
+
+	// Owner is the user associated with the host used to populate any necessary metadata.
+	Owner *user.DBUser
+}
+
 // Provision the host, and update the database accordingly.
-func (init *HostInit) ProvisionHost(h *host.Host) error {
+func (init *HostInit) ProvisionHost(h *host.Host, opts ProvisionOptions) error {
 
 	// run the setup script
 	output, err := init.setupHost(h)
@@ -341,6 +355,19 @@ func (init *HostInit) ProvisionHost(h *host.Host) error {
 
 		return fmt.Errorf("error initializing host %v: %v", h.Id, err)
 
+	}
+
+	if opts.LoadCLI && opts.Owner != nil {
+		evergreen.Logger.Logf(slogger.INFO, "Uploading client binary to host %v", h.Id)
+		lcr, err := init.LoadClient(h, opts.Owner)
+		if err != nil {
+			evergreen.Logger.Logf(slogger.ERROR, "Failed to load client binary onto host %v", h.Id)
+		} else if err == nil && len(opts.TaskId) > 0 {
+
+			evergreen.Logger.Logf(slogger.INFO, "Fetching data for task %v onto host %v", opts.TaskId, h.Id)
+			err = init.fetchRemoteTaskData(opts.TaskId, lcr.BinaryPath, lcr.ConfigPath, h)
+			evergreen.Logger.Logf(slogger.ERROR, "Failed to fetch client binary onto host %v", h.Id)
+		}
 	}
 
 	// the setup was successful. update the host accordingly in the database
@@ -451,12 +478,12 @@ func (init *HostInit) LoadClient(target *host.Host, user *user.DBUser) (*LoadCli
 	}
 
 	// 4. Write a settings file for the user that owns the host, and scp it to the directory
-	outputStruct := struct {
-		User    string `json:"user"`
-		APIKey  string `json:"api_key"`
-		APIHost string `json:"api_server_host"`
-		UIHost  string `json:"ui_server_host"`
-	}{user.Id, user.APIKey, init.Settings.ApiUrl + "/api", init.Settings.Ui.Url}
+	outputStruct := model.CLISettings{
+		User:          user.Id,
+		APIKey:        user.APIKey,
+		APIServerHost: init.Settings.ApiUrl + "/api",
+		UIServerHost:  init.Settings.Ui.Url,
+	}
 	outputJSON, err := json.Marshal(outputStruct)
 	if err != nil {
 		return nil, err
@@ -486,4 +513,44 @@ func (init *HostInit) LoadClient(target *host.Host, user *user.DBUser) (*LoadCli
 		BinaryPath: fmt.Sprintf("~/%s/evergreen", targetDir),
 		ConfigPath: fmt.Sprintf("~/%s/.evergreen.yml", targetDir),
 	}, nil
+}
+
+func (init *HostInit) fetchRemoteTaskData(taskId, cliPath, confPath string, target *host.Host) error {
+	hostSSHInfo, err := util.ParseSSHInfo(target.Host)
+	if err != nil {
+		return fmt.Errorf("error parsing ssh info %v: %v", target.Host, err)
+	}
+
+	cloudHost, err := providers.GetCloudHost(target, init.Settings)
+	if err != nil {
+		return fmt.Errorf("Failed to get cloud host for %v: %v", target.Id, err)
+	}
+	sshOptions, err := cloudHost.GetSSHOptions()
+	if err != nil {
+		return fmt.Errorf("Error getting ssh options for host %v: %v", target.Id, err)
+	}
+	sshOptions = append(sshOptions, "-o", "UserKnownHostsFile=/dev/null")
+
+	// TESTING ONLY
+	// Note for testing - when running locally, if your API Server's URL is behind a gateway (i.e. not a
+	// static IP) the next step will fail because the API server will not be reachable.
+	// If you want it to reach your local API server, execute a command here that sets up a reverse ssh tunnel:
+	// ssh -f -N -T -R 8080:localhost:8080 -o UserKnownHostsFile=/dev/null
+	// ... or, add a time.Sleep() here that gives you enough time to log in and edit the config
+	// on the spawnhost manually.
+
+	cmdOutput := &util.CappedWriter{&bytes.Buffer{}, 1024 * 1024}
+	makeShellCmd := &command.RemoteCommand{
+		CmdString:      fmt.Sprintf("%s -c %s fetch -t %s --source --artifacts", cliPath, confPath, taskId),
+		Stdout:         cmdOutput,
+		Stderr:         cmdOutput,
+		RemoteHostName: hostSSHInfo.Hostname,
+		User:           target.User,
+		Options:        append([]string{"-p", hostSSHInfo.Port}, sshOptions...),
+	}
+
+	// run the make shell command with a timeout
+	err = util.RunFunctionWithTimeout(makeShellCmd.Run, 10*time.Minute)
+	return err
+
 }
