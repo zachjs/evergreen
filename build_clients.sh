@@ -14,12 +14,8 @@ GOXC="`pwd`/vendor/src/github.com/laher/goxc/goxc.go"
 NONTASKS="go-vet,go-test,archive,rmbin"
 DESTDIR="`pwd`/clients"
 OSTARGETS="windows darwin linux"
-#OSTARGETS=(  windows windows darwin darwin linux linux solaris)
-#ARCHTARGETS=(amd64   386     amd64  386    amd64 386   amd64)
-#OSTARGETS=(  solaris windows windows darwin darwin linux linux)
-#ARCHTARGETS=(  amd64   amd64     386  amd64    386 amd64   386)
-OSTARGETS=(  linux)
-ARCHTARGETS=(  386)
+OSTARGETS=(  solaris windows windows darwin darwin linux linux)
+ARCHTARGETS=(  amd64   amd64     386  amd64    386 amd64   386)
 
 cd cli/main
 if [ "$1" = "dev" ] ; then

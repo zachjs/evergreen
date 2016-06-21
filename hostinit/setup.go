@@ -5,10 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sync"
 	"time"
@@ -536,7 +534,7 @@ func (init *HostInit) fetchRemoteTaskData(taskId, cliPath, confPath string, targ
 	}
 	sshOptions = append(sshOptions, "-o", "UserKnownHostsFile=/dev/null")
 
-	// TESTING ONLY
+	/* TESTING ONLY
 	// Note for testing - when running locally, if your API Server's URL is behind a gateway (i.e. not a
 	// static IP) the next step will fail because the API server will not be reachable.
 	// If you want it to reach your local API server, execute a command here that sets up a reverse ssh tunnel:
@@ -554,9 +552,11 @@ func (init *HostInit) fetchRemoteTaskData(taskId, cliPath, confPath string, targ
 	fmt.Println("Tunnel setup complete, starting fetch in 10 seconds...")
 	time.Sleep(10 * time.Second)
 
-	fmt.Println("Running fetch command")
+	// When testing, use this writer to force a copy of the output to be written to standard out so
+	// that remote command failures also show up in server log output.
 	cmdOutput := io.MultiWriter(&util.CappedWriter{&bytes.Buffer{}, 1024 * 1024}, os.Stdout)
-	//cmdOutput := &util.CappedWriter{&bytes.Buffer{}, 1024 * 1024}
+	*/
+	cmdOutput := &util.CappedWriter{&bytes.Buffer{}, 1024 * 1024}
 	makeShellCmd := &command.RemoteCommand{
 		CmdString:      fmt.Sprintf("%s -c '%s' fetch -t %s --source --artifacts", cliPath, confPath, taskId),
 		Stdout:         cmdOutput,
