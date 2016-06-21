@@ -14,8 +14,12 @@ GOXC="`pwd`/vendor/src/github.com/laher/goxc/goxc.go"
 NONTASKS="go-vet,go-test,archive,rmbin"
 DESTDIR="`pwd`/clients"
 OSTARGETS="windows darwin linux"
-OSTARGETS=(  windows windows darwin darwin linux linux solaris)
-ARCHTARGETS=(amd64   386     amd64  386    amd64 386   amd64)
+#OSTARGETS=(  windows windows darwin darwin linux linux solaris)
+#ARCHTARGETS=(amd64   386     amd64  386    amd64 386   amd64)
+#OSTARGETS=(  solaris windows windows darwin darwin linux linux)
+#ARCHTARGETS=(  amd64   amd64     386  amd64    386 amd64   386)
+OSTARGETS=(  linux)
+ARCHTARGETS=(  386)
 
 cd cli/main
 if [ "$1" = "dev" ] ; then
@@ -35,7 +39,4 @@ else
 		mkdir -p $DESTDIR/${GOOS}_${GOARCH};
 		go build -o $DESTDIR/${GOOS}_${GOARCH}/main -ldflags "-X github.com/evergreen-ci/evergreen.BuildRevision=`git rev-parse HEAD`" cli.go;
 	done
-
-	# cross compile.
-	go run $GOXC -tasks-=$NONTASKS -d $DESTDIR -os="$OSTARGETS" -arch="$ARCHTARGETS" -build-ldflags "-X github.com/evergreen-ci/evergreen.BuildRevision `git rev-parse HEAD`"
 fi
