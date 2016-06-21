@@ -489,6 +489,9 @@ button.alert-close {
   user-select: none;
   /* non-prefixed version, currently not supported by any browser */
 }
+.mono {
+  font-family: monospace;
+}
 .remove-version {
   margin: 10px;
 }
@@ -1502,6 +1505,9 @@ textarea {
 .host-info-item {
   margin-right: 5px;
   text-transform: none;
+}
+.host-info-item a {
+  color: white;
 }
 .task-history-gridtable .top-header-row.locked {
   margin-left: 250px;

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -329,6 +330,8 @@ type ProvisionOptions struct {
 func (init *HostInit) ProvisionHost(h *host.Host, opts ProvisionOptions) error {
 
 	// run the setup script
+
+	evergreen.Logger.Logf(slogger.INFO, "Setting up host %v", h.Id)
 	output, err := init.setupHost(h)
 
 	// deal with any errors that occured while running the setup
@@ -358,16 +361,17 @@ func (init *HostInit) ProvisionHost(h *host.Host, opts ProvisionOptions) error {
 
 	}
 
+	evergreen.Logger.Logf(slogger.INFO, "Setup complete for host %v", h.Id)
+
 	if opts.LoadCLI && opts.Owner != nil {
 		evergreen.Logger.Logf(slogger.INFO, "Uploading client binary to host %v", h.Id)
 		lcr, err := init.LoadClient(h, opts.Owner)
 		if err != nil {
-			evergreen.Logger.Logf(slogger.ERROR, "Failed to load client binary onto host %v", h.Id)
+			evergreen.Logger.Logf(slogger.ERROR, "Failed to load client binary onto host %v: %v", h.Id, err)
 		} else if err == nil && len(opts.TaskId) > 0 {
-
 			evergreen.Logger.Logf(slogger.INFO, "Fetching data for task %v onto host %v", opts.TaskId, h.Id)
 			err = init.fetchRemoteTaskData(opts.TaskId, lcr.BinaryPath, lcr.ConfigPath, h)
-			evergreen.Logger.Logf(slogger.ERROR, "Failed to fetch client binary onto host %v", h.Id)
+			evergreen.Logger.Logf(slogger.ERROR, "Failed to fetch data onto host %v", h.Id)
 		}
 	}
 
@@ -539,16 +543,22 @@ func (init *HostInit) fetchRemoteTaskData(taskId, cliPath, confPath string, targ
 	// ssh -f -N -T -R 8080:localhost:8080 -o UserKnownHostsFile=/dev/null
 	// ... or, add a time.Sleep() here that gives you enough time to log in and edit the config
 	// on the spawnhost manually.
-	out, err := exec.Command("ssh", "-f", "-N", "-T", "-R", "8080:localhost:8080", "-o", "UserKnownHostsFile=/dev/null", "-i", "/Users/michaelobrien/.ssh/mci.pem", fmt.Sprintf("%s@%s", target.User, hostSSHInfo.Hostname))
-	fmt.Println("got result from tunnel command: ", string(out), err)
+	fmt.Println("starting up tunnel.")
+	tunnelCmd := exec.Command("ssh", "-f", "-N", "-T", "-R", "8080:localhost:8080", "-o", "UserKnownHostsFile=/dev/null", "-o", "StrictHostKeyChecking=no", "-i", "/Users/michaelobrien/.ssh/mci.pem", fmt.Sprintf("%s@%s", target.User, hostSSHInfo.Hostname))
+	err = tunnelCmd.Start()
 	if err != nil {
-		fmt.Println("do the tunnel yourself.")
-		time.Sleep(20 * time.Second)
+		fmt.Println("Setting up SSH tunnel failed - manual tunnel setup required.")
+		// Give the developer a 30 second grace period to set up the tunnel.
+		time.Sleep(30 * time.Second)
 	}
+	fmt.Println("Tunnel setup complete, starting fetch in 10 seconds...")
+	time.Sleep(10 * time.Second)
 
-	cmdOutput := &util.CappedWriter{&bytes.Buffer{}, 1024 * 1024}
+	fmt.Println("Running fetch command")
+	cmdOutput := io.MultiWriter(&util.CappedWriter{&bytes.Buffer{}, 1024 * 1024}, os.Stdout)
+	//cmdOutput := &util.CappedWriter{&bytes.Buffer{}, 1024 * 1024}
 	makeShellCmd := &command.RemoteCommand{
-		CmdString:      fmt.Sprintf("%s -c %s fetch -t %s --source --artifacts", cliPath, confPath, taskId),
+		CmdString:      fmt.Sprintf("%s -c '%s' fetch -t %s --source --artifacts", cliPath, confPath, taskId),
 		Stdout:         cmdOutput,
 		Stderr:         cmdOutput,
 		RemoteHostName: hostSSHInfo.Hostname,
@@ -557,7 +567,6 @@ func (init *HostInit) fetchRemoteTaskData(taskId, cliPath, confPath string, targ
 	}
 
 	// run the make shell command with a timeout
-	err = util.RunFunctionWithTimeout(makeShellCmd.Run, 10*time.Minute)
+	err = util.RunFunctionWithTimeout(makeShellCmd.Run, 15*time.Minute)
 	return err
-
 }

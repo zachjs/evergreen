@@ -185,7 +185,8 @@ Evergreen - {{Trunc .Task.Revision 10}} / {{.Task.BuildVariantDisplay}} / {{.Tas
                 <td>
                   <span>
                     <a href="/host/[[task.host_id]]" class="host-info-item">[[task.host_id]]</a>
-                    <span class="label label-primary host-info-item">[[task.distro]]</span>
+                    <span ng-show="haveUser" class="label label-primary host-info-item"><a ng-href="/distros##[[task.distro]]">[[task.distro]]</a></span>
+                    <span ng-hide="haveUser" class="label label-primary host-info-item">[[task.distro]]</span>
                     <a ng-show="haveUser && getSpawnLink().length > 0" href="[[getSpawnLink()]]" class="small">Spawn...</a>
                   </span>
                 </td>
