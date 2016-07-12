@@ -119,124 +119,123 @@ func stringToCriterion(s string) selectCriterion {
 	return sc
 }
 
-// Task Selector Logic
-
-// taskSelectorEvaluator expands tags used in build variant definitions.
-type taskSelectorEvaluator struct {
-	tasks  []ProjectTask
-	byName map[string]*ProjectTask
-	byTag  map[string][]*ProjectTask
+// tagSelectee allows the tagSelectorEvaluator to work for multiple types
+type tagSelectee interface {
+	name() string
+	tags() []string
 }
 
-// NewParserTaskSelectorEvaluator returns a new taskSelectorEvaluator.
-func NewParserTaskSelectorEvaluator(tasks []parserTask) *taskSelectorEvaluator {
+type tagSelectorEvaluator struct {
+	items  []tagSelectee
+	byName map[string]tagSelectee
+	byTag  map[string][]tagSelectee
+}
+
+// newTagSelectorEvaluator returns a new taskSelectorEvaluator.
+func newTagSelectorEvaluator(selectees []tagSelectee) *tagSelectorEvaluator {
 	// cache everything
-	byName := map[string]*ProjectTask{}
-	byTag := map[string][]*ProjectTask{}
-	ts := []ProjectTask{}
-	for _, t := range tasks {
-		info := ProjectTask{
-			Name: t.Name,
-			Tags: t.Tags,
-		}
-		ts = append(ts, info)
-		byName[t.Name] = &info
-		for _, tag := range t.Tags {
-			byTag[tag] = append(byTag[tag], &info)
+	byName := map[string]tagSelectee{}
+	byTag := map[string][]tagSelectee{}
+	items := []tagSelectee{}
+	for _, s := range selectees {
+		items = append(items, s)
+		byName[s.name()] = s
+		for _, tag := range s.tags() {
+			byTag[tag] = append(byTag[tag], s)
 		}
 	}
-	return &taskSelectorEvaluator{
-		tasks:  ts,
+	return &tagSelectorEvaluator{
+		items:  items,
 		byName: byName,
 		byTag:  byTag,
 	}
 }
 
-// evalSelector returns all task names that fulfil a selector. This is done
+// evalSelector returns all names that fulfil a selector. This is done
 // by evaluating each criterion individually and taking the intersection.
-func (tse *taskSelectorEvaluator) evalSelector(s Selector) ([]string, error) {
+func (tse *tagSelectorEvaluator) evalSelector(s Selector) ([]string, error) {
 	// keep a slice of results per criterion
 	results := []string{}
 	if len(s) == 0 {
 		return nil, fmt.Errorf("cannot evaluate selector with no criteria")
 	}
 	for i, sc := range s {
-		taskNames, err := tse.evalCriterion(sc)
+		names, err := tse.evalCriterion(sc)
 		if err != nil {
 			return nil, fmt.Errorf("error evaluating '%v' selector: %v", s, err)
 		}
 		if i == 0 {
-			results = taskNames
+			results = names
 		} else {
 			// intersect all evaluated criteria
-			results = util.StringSliceIntersection(results, taskNames)
+			results = util.StringSliceIntersection(results, names)
 		}
 	}
 	if len(results) == 0 {
-		return nil, fmt.Errorf("no tasks satisfy selector '%v'", s)
+		return nil, fmt.Errorf("nothing satisfies selector '%v'", s)
 	}
 	return results, nil
 }
 
-// evalCriterion returns all task names that fulfil a single selection criterion.
-func (tse *taskSelectorEvaluator) evalCriterion(sc selectCriterion) ([]string, error) {
+// evalCriterion returns all names that fulfil a single selection criterion.
+func (tse *tagSelectorEvaluator) evalCriterion(sc selectCriterion) ([]string, error) {
 	switch {
 	case sc.Validate() != nil:
 		return nil, fmt.Errorf("criterion '%v' is invalid: %v", sc, sc.Validate())
 
-	case sc.name == SelectAll: // special "All Tasks" case
+	case sc.name == SelectAll: // special * case
 		names := []string{}
-		for _, task := range tse.tasks {
-			names = append(names, task.Name)
+		for _, item := range tse.items {
+			names = append(names, item.name())
 		}
 		return names, nil
 
 	case !sc.tagged && !sc.negated: // just a regular name
-		task := tse.byName[sc.name]
-		if task == nil {
-			return nil, fmt.Errorf("no task named '%v'", sc.name)
+		item := tse.byName[sc.name]
+		if item == nil {
+			return nil, fmt.Errorf("nothing named '%v'", sc.name)
 		}
-		return []string{task.Name}, nil
+		return []string{item.name()}, nil
 
 	case sc.tagged && !sc.negated: // expand a tag
-		tasks := tse.byTag[sc.name]
-		if len(tasks) == 0 {
-			return nil, fmt.Errorf("no tasks have the tag '%v'", sc.name)
+		taggedItems := tse.byTag[sc.name]
+		if len(taggedItems) == 0 {
+			return nil, fmt.Errorf("nothing has the tag '%v'", sc.name)
 		}
 		names := []string{}
-		for _, task := range tasks {
-			names = append(names, task.Name)
+		for _, item := range taggedItems {
+			names = append(names, item.name())
 		}
 		return names, nil
 
-	case !sc.tagged && sc.negated: // everything *but* a specific task
+	case !sc.tagged && sc.negated: // everything *but* a specific item
 		if tse.byName[sc.name] == nil {
 			// we want to treat this as an error for better usability
-			return nil, fmt.Errorf("no task named '%v'", sc.name)
+			return nil, fmt.Errorf("nothing named '%v'", sc.name)
 		}
 		names := []string{}
-		for _, task := range tse.tasks {
-			if task.Name != sc.name {
-				names = append(names, task.Name)
+		for _, item := range tse.items {
+			if item.name() != sc.name {
+				names = append(names, item.name())
 			}
 		}
 		return names, nil
 
 	case sc.tagged && sc.negated: // everything *but* a tag
-		tasks := tse.byTag[sc.name]
-		if len(tasks) == 0 {
+		items := tse.byTag[sc.name]
+		if len(items) == 0 {
 			// we want to treat this as an error for better usability
-			return nil, fmt.Errorf("no tasks have the tag '%v'", sc.name)
+			return nil, fmt.Errorf("nothing has the tag '%v'", sc.name)
 		}
-		// compare tasks by address to avoid the ones with a negated tag
-		illegalTasks := map[*ProjectTask]bool{}
-		for _, taskPtr := range tasks {
-			illegalTasks[taskPtr] = true
+		illegalItems := map[string]bool{}
+		for _, item := range items {
+			illegalItems[item.name()] = true
 		}
 		names := []string{}
-		for _, taskPtr := range tse.byName {
-			if !illegalTasks[taskPtr] {
-				names = append(names, taskPtr.Name)
+		// build slice of all items that aren't in the tag
+		for _, item := range tse.items {
+			if !illegalItems[item.name()] {
+				names = append(names, item.name())
 			}
 		}
 		return names, nil
@@ -245,4 +244,62 @@ func (tse *taskSelectorEvaluator) evalCriterion(sc selectCriterion) ([]string, e
 		// protection for if we edit this switch block later
 		panic("this should not be reachable")
 	}
+}
+
+// Task Selector Logic
+
+// taskSelectorEvaluator expands tags used in build variant definitions.
+type taskSelectorEvaluator struct {
+	tagEval *tagSelectorEvaluator
+}
+
+// NewParserTaskSelectorEvaluator returns a new taskSelectorEvaluator.
+func NewParserTaskSelectorEvaluator(tasks []parserTask) *taskSelectorEvaluator {
+	// convert tasks into interface slice and use the tagSelectorEvaluator
+	var selectees []tagSelectee
+	for i := range tasks {
+		selectees = append(selectees, &tasks[i])
+	}
+	return &taskSelectorEvaluator{
+		tagEval: newTagSelectorEvaluator(selectees),
+	}
+}
+
+// evalSelector returns all tasks selected by a selector.
+func (t *taskSelectorEvaluator) evalSelector(s Selector) ([]string, error) {
+	results, err := t.tagEval.evalSelector(s)
+	if err != nil {
+		return nil, fmt.Errorf("error evaluating task selector: %v", err)
+	}
+	return results, nil
+}
+
+// Variant selector logic
+
+// variantSelectorEvaluator expands tags used in build variant definitions.
+type variantSelectorEvaluator struct {
+	tagEval *tagSelectorEvaluator
+	//TODO cache for axes
+}
+
+// NewParservariantSelectorEvaluator returns a new taskSelectorEvaluator.
+func NewVariantSelectorEvaluator(variants []parserBV) *variantSelectorEvaluator {
+	// convert variants into interface slice and use the tagSelectorEvaluator
+	var selectees []tagSelectee
+	for i := range variants {
+		selectees = append(selectees, &variants[i])
+	}
+	return &variantSelectorEvaluator{
+		tagEval: newTagSelectorEvaluator(selectees),
+	}
+	//TODO handle matrix selectors
+}
+
+// evalSelector returns all variants selected by the selector.
+func (v *variantSelectorEvaluator) evalSelector(s Selector) ([]string, error) {
+	results, err := v.tagEval.evalSelector(s)
+	if err != nil {
+		return nil, fmt.Errorf("error evaluating variant tag selector: %v", err)
+	}
+	return results, nil
 }

@@ -64,7 +64,7 @@ func TestBasicSelector(t *testing.T) {
 	})
 }
 
-func taskSelectorShouldEval(tse *taskSelectorEvaluator, s string, expected []string) {
+func tagSelectorShouldEval(tse *tagSelectorEvaluator, s string, expected []string) {
 	Convey(fmt.Sprintf(`selector "%v" should evaluate to %v`, s, expected), func() {
 		names, err := tse.evalSelector(ParseSelector(s))
 		if expected != nil {
@@ -79,52 +79,60 @@ func taskSelectorShouldEval(tse *taskSelectorEvaluator, s string, expected []str
 	})
 }
 
-func TestTaskSelectorEvaluation(t *testing.T) {
-	var tse *taskSelectorEvaluator
+type testSelectee struct {
+	Name string
+	Tags []string
+}
 
-	Convey("With a colorful set of ProjectTasks", t, func() {
-		taskDefs := []parserTask{
-			{Name: "red", Tags: []string{"primary", "warm"}},
-			{Name: "orange", Tags: []string{"secondary", "warm"}},
-			{Name: "yellow", Tags: []string{"primary", "warm"}},
-			{Name: "green", Tags: []string{"secondary", "cool"}},
-			{Name: "blue", Tags: []string{"primary", "cool"}},
-			{Name: "purple", Tags: []string{"secondary", "cool"}},
-			{Name: "brown", Tags: []string{"tertiary"}},
-			{Name: "black", Tags: []string{"special"}},
-			{Name: "white", Tags: []string{"special"}},
+func (ts testSelectee) name() string   { return ts.Name }
+func (ts testSelectee) tags() []string { return ts.Tags }
+
+func TestTaskSelectorEvaluation(t *testing.T) {
+	var tse *tagSelectorEvaluator
+
+	Convey("With a colorful set of Projecttags", t, func() {
+		defs := []tagSelectee{
+			testSelectee{Name: "red", Tags: []string{"primary", "warm"}},
+			testSelectee{Name: "orange", Tags: []string{"secondary", "warm"}},
+			testSelectee{Name: "yellow", Tags: []string{"primary", "warm"}},
+			testSelectee{Name: "green", Tags: []string{"secondary", "cool"}},
+			testSelectee{Name: "blue", Tags: []string{"primary", "cool"}},
+			testSelectee{Name: "purple", Tags: []string{"secondary", "cool"}},
+			testSelectee{Name: "brown", Tags: []string{"tertiary"}},
+			testSelectee{Name: "black", Tags: []string{"special"}},
+			testSelectee{Name: "white", Tags: []string{"special"}},
 		}
 
-		Convey("a taskSelectorEvaluator", func() {
-			tse = NewParserTaskSelectorEvaluator(taskDefs)
+		Convey("a tagSelectorEvaluator", func() {
+			tse = newTagSelectorEvaluator(defs)
 
 			Convey("should evaluate single name selectors properly", func() {
-				taskSelectorShouldEval(tse, "red", []string{"red"})
-				taskSelectorShouldEval(tse, "white", []string{"white"})
+				tagSelectorShouldEval(tse, "red", []string{"red"})
+				tagSelectorShouldEval(tse, "white", []string{"white"})
 			})
 
 			Convey("should evaluate single tag selectors properly", func() {
-				taskSelectorShouldEval(tse, ".warm", []string{"red", "orange", "yellow"})
-				taskSelectorShouldEval(tse, ".cool", []string{"blue", "green", "purple"})
-				taskSelectorShouldEval(tse, ".special", []string{"white", "black"})
-				taskSelectorShouldEval(tse, ".primary", []string{"red", "blue", "yellow"})
+				tagSelectorShouldEval(tse, ".warm", []string{"red", "orange", "yellow"})
+				tagSelectorShouldEval(tse, ".cool", []string{"blue", "green", "purple"})
+				tagSelectorShouldEval(tse, ".special", []string{"white", "black"})
+				tagSelectorShouldEval(tse, ".primary", []string{"red", "blue", "yellow"})
 			})
 
 			Convey("should evaluate multi-tag selectors properly", func() {
-				taskSelectorShouldEval(tse, ".warm .cool", nil)
-				taskSelectorShouldEval(tse, ".cool .primary", []string{"blue"})
-				taskSelectorShouldEval(tse, ".warm .secondary", []string{"orange"})
+				tagSelectorShouldEval(tse, ".warm .cool", nil)
+				tagSelectorShouldEval(tse, ".cool .primary", []string{"blue"})
+				tagSelectorShouldEval(tse, ".warm .secondary", []string{"orange"})
 			})
 
 			Convey("should evaluate selectors with negation properly", func() {
-				taskSelectorShouldEval(tse, "!.special",
+				tagSelectorShouldEval(tse, "!.special",
 					[]string{"red", "orange", "yellow", "green", "blue", "purple", "brown"})
-				taskSelectorShouldEval(tse, ".warm !yellow", []string{"red", "orange"})
-				taskSelectorShouldEval(tse, "!.primary !.secondary", []string{"black", "white", "brown"})
+				tagSelectorShouldEval(tse, ".warm !yellow", []string{"red", "orange"})
+				tagSelectorShouldEval(tse, "!.primary !.secondary", []string{"black", "white", "brown"})
 			})
 
 			Convey("should evaluate special selectors", func() {
-				taskSelectorShouldEval(tse, "*",
+				tagSelectorShouldEval(tse, "*",
 					[]string{"red", "orange", "yellow", "green", "blue", "purple", "brown", "black", "white"})
 			})
 

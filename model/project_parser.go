@@ -71,6 +71,10 @@ type parserTask struct {
 	Stepback        *bool               `yaml:"stepback"`
 }
 
+// helper methods for task tag evaluations
+func (pt *parserTask) name() string   { return pt.Name }
+func (pt *parserTask) tags() []string { return pt.Tags }
+
 // parserDependency represents the intermediary state for referencing dependencies.
 type parserDependency struct {
 	TaskSelector
@@ -175,6 +179,7 @@ type parserBV struct {
 	Name        string            `yaml:"name"`
 	DisplayName string            `yaml:"display_name"`
 	Expansions  map[string]string `yaml:"expansions"`
+	Tags        []string          `yaml:"tags"`
 	Modules     parserStringSlice `yaml:"modules"`
 	Disabled    bool              `yaml:"disabled"`
 	Push        bool              `yaml:"push"`
@@ -183,6 +188,10 @@ type parserBV struct {
 	RunOn       parserStringSlice `yaml:"run_on"`
 	Tasks       parserBVTasks     `yaml:"tasks"`
 }
+
+// helper methods for variant tag evaluations
+func (pbv *parserBV) name() string   { return pbv.Name }
+func (pbv *parserBV) tags() []string { return pbv.Tags }
 
 // parserBVTask is a helper type storing intermediary variant task configurations.
 type parserBVTask struct {
@@ -340,17 +349,19 @@ func translateProject(pp *parserProject) (*Project, []error) {
 		ExecTimeoutSecs: pp.ExecTimeoutSecs,
 	}
 	tse := NewParserTaskSelectorEvaluator(pp.Tasks)
+	vse := NewVariantSelectorEvaluator(pp.BuildVariants)
 	var evalErrs, errs []error
-	proj.Tasks, errs = evaluateTasks(tse, pp.Tasks)
+	proj.Tasks, errs = evaluateTasks(tse, vse, pp.Tasks)
 	evalErrs = append(evalErrs, errs...)
-	proj.BuildVariants, errs = evaluateBuildVariants(tse, pp.BuildVariants)
+	proj.BuildVariants, errs = evaluateBuildVariants(tse, vse, pp.BuildVariants)
 	evalErrs = append(evalErrs, errs...)
 	return proj, evalErrs
 }
 
 // evaluateTasks translates intermediate tasks into true ProjectTask types,
 // evaluating any selectors in the DependsOn or Requires fields.
-func evaluateTasks(tse *taskSelectorEvaluator, pts []parserTask) ([]ProjectTask, []error) {
+func evaluateTasks(tse *taskSelectorEvaluator, vse *variantSelectorEvaluator,
+	pts []parserTask) ([]ProjectTask, []error) {
 	tasks := []ProjectTask{}
 	var evalErrs, errs []error
 	for _, pt := range pts {
@@ -363,9 +374,9 @@ func evaluateTasks(tse *taskSelectorEvaluator, pts []parserTask) ([]ProjectTask,
 			Tags:            pt.Tags,
 			Stepback:        pt.Stepback,
 		}
-		t.DependsOn, errs = evaluateDependsOn(tse, pt.DependsOn)
+		t.DependsOn, errs = evaluateDependsOn(tse, vse, pt.DependsOn)
 		evalErrs = append(evalErrs, errs...)
-		t.Requires, errs = evaluateRequires(tse, pt.Requires)
+		t.Requires, errs = evaluateRequires(tse, vse, pt.Requires)
 		evalErrs = append(evalErrs, errs...)
 		tasks = append(tasks, t)
 	}
@@ -374,7 +385,8 @@ func evaluateTasks(tse *taskSelectorEvaluator, pts []parserTask) ([]ProjectTask,
 
 // evaluateBuildsVariants translates intermediate tasks into true BuildVariant types,
 // evaluating any selectors in the Tasks fields.
-func evaluateBuildVariants(tse *taskSelectorEvaluator, pbvs []parserBV) ([]BuildVariant, []error) {
+func evaluateBuildVariants(tse *taskSelectorEvaluator, vse *variantSelectorEvaluator,
+	pbvs []parserBV) ([]BuildVariant, []error) {
 	bvs := []BuildVariant{}
 	var evalErrs, errs []error
 	for _, pbv := range pbvs {
@@ -388,8 +400,9 @@ func evaluateBuildVariants(tse *taskSelectorEvaluator, pbvs []parserBV) ([]Build
 			BatchTime:   pbv.BatchTime,
 			Stepback:    pbv.Stepback,
 			RunOn:       pbv.RunOn,
+			Tags:        pbv.Tags,
 		}
-		bv.Tasks, errs = evaluateBVTasks(tse, pbv.Tasks)
+		bv.Tasks, errs = evaluateBVTasks(tse, vse, pbv.Tasks)
 		evalErrs = append(evalErrs, errs...)
 		bvs = append(bvs, bv)
 	}
@@ -399,7 +412,8 @@ func evaluateBuildVariants(tse *taskSelectorEvaluator, pbvs []parserBV) ([]Build
 // evaluateBVTasks translates intermediate tasks into true BuildVariantTask types,
 // evaluating any selectors referencing tasks, and further evaluating any selectors
 // in the DependsOn or Requires fields of those tasks.
-func evaluateBVTasks(tse *taskSelectorEvaluator, pbvts []parserBVTask) ([]BuildVariantTask, []error) {
+func evaluateBVTasks(tse *taskSelectorEvaluator, vse *variantSelectorEvaluator,
+	pbvts []parserBVTask) ([]BuildVariantTask, []error) {
 	var evalErrs, errs []error
 	ts := []BuildVariantTask{}
 	tasksByName := map[string]BuildVariantTask{}
@@ -421,9 +435,9 @@ func evaluateBVTasks(tse *taskSelectorEvaluator, pbvts []parserBVTask) ([]BuildV
 				Stepback:        pt.Stepback,
 				Distros:         pt.Distros,
 			}
-			t.DependsOn, errs = evaluateDependsOn(tse, pt.DependsOn)
+			t.DependsOn, errs = evaluateDependsOn(tse, vse, pt.DependsOn)
 			evalErrs = append(evalErrs, errs...)
-			t.Requires, errs = evaluateRequires(tse, pt.Requires)
+			t.Requires, errs = evaluateRequires(tse, vse, pt.Requires)
 			evalErrs = append(evalErrs, errs...)
 
 			// add the new task if it doesn't already exists (we must avoid conflicting status fields)
@@ -444,49 +458,56 @@ func evaluateBVTasks(tse *taskSelectorEvaluator, pbvts []parserBVTask) ([]BuildV
 }
 
 // evaluateDependsOn expands any selectors in a dependency definition.
-func evaluateDependsOn(tse *taskSelectorEvaluator, deps []parserDependency) ([]TaskDependency, []error) {
+func evaluateDependsOn(tse *taskSelectorEvaluator, vse *variantSelectorEvaluator,
+	deps []parserDependency) ([]TaskDependency, []error) {
 	var evalErrs []error
+	var err error
 	newDeps := []TaskDependency{}
 	newDepsByNameAndVariant := map[TVPair]TaskDependency{}
 	for _, d := range deps {
+		names := []string{""}
 		if d.Name == AllDependencies {
-			// * is a special case for dependencies
-			allDep := TaskDependency{
-				Name:          AllDependencies,
-				Variant:       d.Variant,
-				Status:        d.Status,
-				PatchOptional: d.PatchOptional,
+			// * is a special case for dependencies, so don't eval it
+			names = []string{AllDependencies}
+		} else {
+			names, err = tse.evalSelector(ParseSelector(d.Name))
+			if err != nil {
+				evalErrs = append(evalErrs, err)
+				continue
 			}
-			newDeps = append(newDeps, allDep)
-			newDepsByNameAndVariant[TVPair{d.Variant, d.Name}] = allDep
-			continue
 		}
-		names, err := tse.evalSelector(ParseSelector(d.Name))
-		if err != nil {
-			evalErrs = append(evalErrs, err)
-			continue
+		// we default to handle the empty variant, but expand the list of variants
+		// if the variant field is set.
+		variants := []string{""}
+		if d.Variant != "" {
+			variants, err = vse.evalSelector(ParseSelector(d.Variant))
+			if err != nil {
+				evalErrs = append(evalErrs, err)
+				continue
+			}
 		}
 		// create new dependency definitions--duplicates must have the same status requirements
 		for _, name := range names {
-			// create a newDep by copying the dep that selected it,
-			// so we can preserve the "Variant" and "Status" field.
-			newDep := TaskDependency{
-				Name:          name,
-				Variant:       d.Variant,
-				Status:        d.Status,
-				PatchOptional: d.PatchOptional,
-			}
-			newDep.Name = name
-			// add the new dep if it doesn't already exists (we must avoid conflicting status fields)
-			if oldDep, ok := newDepsByNameAndVariant[TVPair{newDep.Variant, newDep.Name}]; !ok {
-				newDeps = append(newDeps, newDep)
-				newDepsByNameAndVariant[TVPair{newDep.Variant, newDep.Name}] = newDep
-			} else {
-				// it's already in the new list, so we check to make sure the status definitions match.
-				if !reflect.DeepEqual(newDep, oldDep) {
-					evalErrs = append(evalErrs, fmt.Errorf(
-						"conflicting definitions of dependency '%v': %v != %v", name, newDep, oldDep))
-					continue
+			for _, variant := range variants {
+				// create a newDep by copying the dep that selected it,
+				// so we can preserve the "Status" and "PatchOptional" field.
+				newDep := TaskDependency{
+					Name:          name,
+					Variant:       variant,
+					Status:        d.Status,
+					PatchOptional: d.PatchOptional,
+				}
+				// add the new dep if it doesn't already exists (we must avoid conflicting status fields)
+				if oldDep, ok := newDepsByNameAndVariant[TVPair{newDep.Variant, newDep.Name}]; !ok {
+					newDeps = append(newDeps, newDep)
+					newDepsByNameAndVariant[TVPair{newDep.Variant, newDep.Name}] = newDep
+				} else {
+					// it's already in the new list, so we check to make sure the status definitions match.
+					if !reflect.DeepEqual(newDep, oldDep) {
+						evalErrs = append(evalErrs, fmt.Errorf(
+							"conflicting definitions of dependency '%v': %v != %v", name, newDep, oldDep))
+						continue
+					}
 				}
 			}
 		}
@@ -495,7 +516,8 @@ func evaluateDependsOn(tse *taskSelectorEvaluator, deps []parserDependency) ([]T
 }
 
 // evaluateRequires expands any selectors in a requirement definition.
-func evaluateRequires(tse *taskSelectorEvaluator, reqs []TaskSelector) ([]TaskRequirement, []error) {
+func evaluateRequires(tse *taskSelectorEvaluator, vse *variantSelectorEvaluator,
+	reqs []TaskSelector) ([]TaskRequirement, []error) {
 	var evalErrs []error
 	newReqs := []TaskRequirement{}
 	newReqsByNameAndVariant := map[TVPair]struct{}{}
@@ -505,13 +527,25 @@ func evaluateRequires(tse *taskSelectorEvaluator, reqs []TaskSelector) ([]TaskRe
 			evalErrs = append(evalErrs, err)
 			continue
 		}
+		// we default to handle the empty variant, but expand the list of variants
+		// if the variant field is set.
+		variants := []string{""}
+		if r.Variant != "" {
+			variants, err = vse.evalSelector(ParseSelector(r.Variant))
+			if err != nil {
+				evalErrs = append(evalErrs, err)
+				continue
+			}
+		}
 		for _, name := range names {
-			newReq := TaskRequirement{Name: name, Variant: r.Variant}
-			newReq.Name = name
-			// add the new req if it doesn't already exists (we must avoid duplicates)
-			if _, ok := newReqsByNameAndVariant[TVPair{newReq.Variant, newReq.Name}]; !ok {
-				newReqs = append(newReqs, newReq)
-				newReqsByNameAndVariant[TVPair{newReq.Variant, newReq.Name}] = struct{}{}
+			for _, variant := range variants {
+				newReq := TaskRequirement{Name: name, Variant: variant}
+				newReq.Name = name
+				// add the new req if it doesn't already exists (we must avoid duplicates)
+				if _, ok := newReqsByNameAndVariant[TVPair{newReq.Variant, newReq.Name}]; !ok {
+					newReqs = append(newReqs, newReq)
+					newReqsByNameAndVariant[TVPair{newReq.Variant, newReq.Name}] = struct{}{}
+				}
 			}
 		}
 	}
