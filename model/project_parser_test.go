@@ -5,8 +5,22 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/evergreen-ci/evergreen/command"
+	"github.com/evergreen-ci/evergreen/util"
 	. "github.com/smartystreets/goconvey/convey"
 )
+
+// ShouldContainResembling tests whether a slice contains an element that DeepEquals
+// the expected input. TODO make this a subpkg
+func ShouldContainResembling(actual interface{}, expected ...interface{}) string {
+	if len(expected) != 1 {
+		return "ShouldContainResembling takes 1 argument"
+	}
+	if !util.SliceContains(actual, expected[0]) {
+		return fmt.Sprintf("%#v does not contain %#v", actual, expected[0])
+	}
+	return ""
+}
 
 func TestCreateIntermediateProjectDependencies(t *testing.T) {
 	Convey("Testing different project files", t, func() {
@@ -98,9 +112,9 @@ tasks:
 			So(p, ShouldNotBeNil)
 			So(len(errs), ShouldEqual, 0)
 			So(p.Tasks[1].Requires[0].Name, ShouldEqual, "task0")
-			So(p.Tasks[1].Requires[0].Variant, ShouldEqual, "v1")
+			So(p.Tasks[1].Requires[0].Variant.stringSelector, ShouldEqual, "v1")
 			So(p.Tasks[1].Requires[1].Name, ShouldEqual, "task2")
-			So(p.Tasks[1].Requires[1].Variant, ShouldEqual, "")
+			So(p.Tasks[1].Requires[1].Variant, ShouldBeNil)
 		})
 		Convey("a single requirement should parse", func() {
 			simple := `
@@ -114,7 +128,29 @@ tasks:
 			So(p, ShouldNotBeNil)
 			So(len(errs), ShouldEqual, 0)
 			So(p.Tasks[0].Requires[0].Name, ShouldEqual, "task0")
-			So(p.Tasks[0].Requires[0].Variant, ShouldEqual, "v1")
+			So(p.Tasks[0].Requires[0].Variant.stringSelector, ShouldEqual, "v1")
+		})
+		Convey("a single requirement with a matrix selector should parse", func() {
+			simple := `
+tasks:
+- name: task1
+  requires:
+    name: "task0"
+    variant:
+     cool: "shoes"
+     colors:
+      - red
+      - green
+      - blue
+`
+			p, errs := createIntermediateProject([]byte(simple))
+			So(errs, ShouldBeNil)
+			So(p, ShouldNotBeNil)
+			So(p.Tasks[0].Requires[0].Name, ShouldEqual, "task0")
+			So(p.Tasks[0].Requires[0].Variant.stringSelector, ShouldEqual, "")
+			So(p.Tasks[0].Requires[0].Variant.matrixSelector, ShouldResemble, matrixDefinition{
+				"cool": []string{"shoes"}, "colors": []string{"red", "green", "blue"},
+			})
 		})
 	})
 }
@@ -151,7 +187,8 @@ buildvariants:
 			So(len(bv.Modules), ShouldEqual, 2)
 			So(bv.Tasks[0].Name, ShouldEqual, "t1")
 			So(bv.Tasks[1].Name, ShouldEqual, "t2")
-			So(bv.Tasks[1].DependsOn[0].TaskSelector, ShouldResemble, TaskSelector{Name: "t3", Variant: "v0"})
+			So(bv.Tasks[1].DependsOn[0].TaskSelector, ShouldResemble,
+				TaskSelector{Name: "t3", Variant: &variantSelector{stringSelector: "v0"}})
 			So(bv.Tasks[1].Requires[0], ShouldResemble, TaskSelector{Name: "t4"})
 			So(*bv.Tasks[1].Stepback, ShouldBeFalse)
 			So(bv.Tasks[1].Priority, ShouldEqual, 77)
@@ -264,7 +301,8 @@ func TestTranslateDependsOn(t *testing.T) {
 				{Name: "t2"},
 				{Name: "t3", DependsOn: parserDependencies{
 					{TaskSelector: TaskSelector{Name: "t1"}},
-					{TaskSelector: TaskSelector{Name: "t2", Variant: "v1"}}},
+					{TaskSelector: TaskSelector{
+						Name: "t2", Variant: &variantSelector{stringSelector: "v1"}}}},
 				},
 			}
 			out, errs := translateProject(pp)
@@ -285,8 +323,10 @@ func TestTranslateDependsOn(t *testing.T) {
 				{Name: "t2", Tags: []string{"a", "c"}, DependsOn: parserDependencies{
 					{TaskSelector: TaskSelector{Name: "*"}}}},
 				{Name: "t3", DependsOn: parserDependencies{
-					{TaskSelector: TaskSelector{Name: ".b", Variant: ".cool !v2"}},
-					{TaskSelector: TaskSelector{Name: ".a !.b", Variant: ".cool"}}},
+					{TaskSelector: TaskSelector{
+						Name: ".b", Variant: &variantSelector{stringSelector: ".cool !v2"}}},
+					{TaskSelector: TaskSelector{
+						Name: ".a !.b", Variant: &variantSelector{stringSelector: ".cool"}}}},
 				},
 			}
 			out, errs := translateProject(pp)
@@ -310,11 +350,11 @@ func TestTranslateDependsOn(t *testing.T) {
 				{Name: "t2", Tags: []string{"a", "c"}},
 				{Name: "t3", DependsOn: parserDependencies{
 					{TaskSelector: TaskSelector{Name: ".cool"}},
-					{TaskSelector: TaskSelector{Name: "!!.cool"}},                //[1] illegal selector
-					{TaskSelector: TaskSelector{Name: "!.c !.b", Variant: "v1"}}, //[2] no matching tasks
-					{TaskSelector: TaskSelector{Name: "t1", Variant: ".nope"}},   //[3] no matching variants
-					{TaskSelector: TaskSelector{Name: "t1"}, Status: "*"},        // valid, but:
-					{TaskSelector: TaskSelector{Name: ".b"}},                     //[4] conflicts with above
+					{TaskSelector: TaskSelector{Name: "!!.cool"}},                                                  //[1] illegal selector
+					{TaskSelector: TaskSelector{Name: "!.c !.b", Variant: &variantSelector{stringSelector: "v1"}}}, //[2] no matching tasks
+					{TaskSelector: TaskSelector{Name: "t1", Variant: &variantSelector{stringSelector: ".nope"}}},   //[3] no matching variants
+					{TaskSelector: TaskSelector{Name: "t1"}, Status: "*"},                                          // valid, but:
+					{TaskSelector: TaskSelector{Name: ".b"}},                                                       //[4] conflicts with above
 				}},
 			}
 			out, errs := translateProject(pp)
@@ -336,7 +376,7 @@ func TestTranslateRequires(t *testing.T) {
 				{Name: "t2"},
 				{Name: "t3", Requires: TaskSelectors{
 					{Name: "t1"},
-					{Name: "t2", Variant: "v1"},
+					{Name: "t2", Variant: &variantSelector{stringSelector: "v1"}},
 				}},
 			}
 			out, errs := translateProject(pp)
@@ -355,10 +395,10 @@ func TestTranslateRequires(t *testing.T) {
 				{Name: "t1"},
 				{Name: "t2", Tags: []string{"taggy"}},
 				{Name: "t3", Requires: TaskSelectors{
-					{Name: "!!!!!"},                     //illegal selector
-					{Name: ".taggy !t2", Variant: "v1"}, //nothing returned
-					{Name: "t1", Variant: "!v1"},        //no variants returned
-					{Name: "t1 t2"},                     //nothing returned
+					{Name: "!!!!!"}, //illegal selector
+					{Name: ".taggy !t2", Variant: &variantSelector{stringSelector: "v1"}}, //nothing returned
+					{Name: "t1", Variant: &variantSelector{stringSelector: "!v1"}},        //no variants returned
+					{Name: "t1 t2"}, //nothing returned
 				}},
 			}
 			out, errs := translateProject(pp)
@@ -423,7 +463,7 @@ func parserTaskSelectorTaskEval(tse *taskSelectorEvaluator, tasks parserBVTasks,
 	for _, e := range expected {
 		exp = append(exp, e.Name)
 	}
-	vse := NewVariantSelectorEvaluator([]parserBV{})
+	vse := NewVariantSelectorEvaluator([]parserBV{}, nil)
 	Convey(fmt.Sprintf("tasks [%v] should evaluate to [%v]",
 		strings.Join(names, ", "), strings.Join(exp, ", ")), func() {
 		ts, errs := evaluateBVTasks(tse, vse, tasks)
@@ -497,6 +537,553 @@ func TestParserTaskSelectorEvaluation(t *testing.T) {
 						{Name: "purple", Priority: 100},
 						{Name: "green", Priority: 100}})
 			})
+		})
+	})
+}
+
+func TestMatrixIntermediateParsing(t *testing.T) {
+	Convey("Testing different project files with matrix definitions", t, func() {
+		Convey("a set of axes should parse", func() {
+			axes := `
+axes:
+- id: os
+  display_name: Operating System
+  values:
+  - id: ubuntu
+    display_name: Ubuntu
+    tags: "linux"
+    variables:
+      user: root
+    run_on: ubuntu_small
+  - id: rhel
+    display_name: Red Hat
+    tags: ["linux", "enterprise"]
+    run_on:
+    - rhel55
+    - rhel62
+`
+			p, errs := createIntermediateProject([]byte(axes))
+			So(errs, ShouldBeNil)
+			axis := p.Axes[0]
+			So(axis.Id, ShouldEqual, "os")
+			So(axis.DisplayName, ShouldEqual, "Operating System")
+			So(len(axis.Values), ShouldEqual, 2)
+			So(axis.Values[0], ShouldResemble, axisValue{
+				Id:          "ubuntu",
+				DisplayName: "Ubuntu",
+				Tags:        []string{"linux"},
+				Variables:   map[string]string{"user": "root"},
+				RunOn:       []string{"ubuntu_small"},
+			})
+			So(axis.Values[1], ShouldResemble, axisValue{
+				Id:          "rhel",
+				DisplayName: "Red Hat",
+				Tags:        []string{"linux", "enterprise"},
+				RunOn:       []string{"rhel55", "rhel62"},
+			})
+		})
+		Convey("a barebones matrix definition should parse", func() {
+			simple := `
+matrixes:
+- matrix_name: "test"
+  matrix_spec: {"os": ".linux", "bits":["32", "64"]}
+  exclude_spec: [{"os":"ubuntu", "bits":"32"}]
+- matrix_name: "test2"
+  matrix_spec:
+    os: "windows95"
+    color:
+    - red
+    - blue
+    - green
+`
+			p, errs := createIntermediateProject([]byte(simple))
+			So(errs, ShouldBeNil)
+			So(len(p.Matrixes), ShouldEqual, 2)
+			m1 := p.Matrixes[0]
+			So(m1, ShouldResemble, matrix{
+				Id: "test",
+				Spec: matrixDefinition{
+					"os":   []string{".linux"},
+					"bits": []string{"32", "64"},
+				},
+				Exclude: []matrixDefinition{
+					{"os": []string{"ubuntu"}, "bits": []string{"32"}},
+				},
+			})
+			m2 := p.Matrixes[1]
+			So(m2, ShouldResemble, matrix{
+				Id: "test2",
+				Spec: matrixDefinition{
+					"os":    []string{"windows95"},
+					"color": []string{"red", "blue", "green"},
+				},
+			})
+		})
+	})
+}
+
+func TestMatrixDefinitionAllCells(t *testing.T) {
+	Convey("With a set of test definitions", t, func() {
+		Convey("an empty definition should return an empty list", func() {
+			a := matrixDefinition{}
+			cells := a.allCells()
+			So(len(cells), ShouldEqual, 0)
+		})
+		Convey("an empty axis should cause a panic", func() {
+			a := matrixDefinition{
+				"a": []string{},
+				"b": []string{"1"},
+			}
+			So(func() { a.allCells() }, ShouldPanic)
+		})
+		Convey("a one-cell matrix should return a one-item list", func() {
+			a := matrixDefinition{
+				"a": []string{"0"},
+			}
+			cells := a.allCells()
+			So(len(cells), ShouldEqual, 1)
+			So(cells, ShouldContainResembling, matrixValue{"a": "0"})
+			b := matrixDefinition{
+				"a": []string{"0"},
+				"b": []string{"1"},
+				"c": []string{"2"},
+			}
+			cells = b.allCells()
+			So(len(cells), ShouldEqual, 1)
+			So(cells, ShouldContainResembling, matrixValue{"a": "0", "b": "1", "c": "2"})
+		})
+		Convey("a one-axis matrix should return an equivalent list", func() {
+			a := matrixDefinition{
+				"a": []string{"0", "1", "2"},
+			}
+			cells := a.allCells()
+			So(len(cells), ShouldEqual, 3)
+			So(cells, ShouldContainResembling, matrixValue{"a": "0"})
+			So(cells, ShouldContainResembling, matrixValue{"a": "1"})
+			So(cells, ShouldContainResembling, matrixValue{"a": "2"})
+			b := matrixDefinition{
+				"a": []string{"0"},
+				"b": []string{"0", "1", "2"},
+			}
+			cells = b.allCells()
+			So(len(cells), ShouldEqual, 3)
+			So(cells, ShouldContainResembling, matrixValue{"b": "0", "a": "0"})
+			So(cells, ShouldContainResembling, matrixValue{"b": "1", "a": "0"})
+			So(cells, ShouldContainResembling, matrixValue{"b": "2", "a": "0"})
+			c := matrixDefinition{
+				"c": []string{"0", "1", "2"},
+				"d": []string{"0"},
+			}
+			cells = c.allCells()
+			So(len(cells), ShouldEqual, 3)
+			So(cells, ShouldContainResembling, matrixValue{"c": "0", "d": "0"})
+			So(cells, ShouldContainResembling, matrixValue{"c": "1", "d": "0"})
+			So(cells, ShouldContainResembling, matrixValue{"c": "2", "d": "0"})
+		})
+		Convey("a 2x2 matrix should expand properly", func() {
+			a := matrixDefinition{
+				"a": []string{"0", "1"},
+				"b": []string{"0", "1"},
+			}
+			cells := a.allCells()
+			So(len(cells), ShouldEqual, 4)
+			So(cells, ShouldContainResembling, matrixValue{"a": "0", "b": "0"})
+			So(cells, ShouldContainResembling, matrixValue{"a": "1", "b": "0"})
+			So(cells, ShouldContainResembling, matrixValue{"a": "0", "b": "1"})
+			So(cells, ShouldContainResembling, matrixValue{"a": "1", "b": "1"})
+		})
+		Convey("a disgustingly large matrix should expand properly", func() {
+			bigList := func(max int) []string {
+				out := []string{}
+				for i := 0; i < max; i++ {
+					out = append(out, fmt.Sprint(i))
+				}
+				return out
+			}
+
+			huge := matrixDefinition{
+				"a": bigList(15),
+				"b": bigList(290),
+				"c": bigList(20),
+			}
+			cells := huge.allCells()
+			So(len(cells), ShouldEqual, 15*290*20)
+			So(cells, ShouldContainResembling, matrixValue{"a": "0", "b": "0", "c": "0"})
+			So(cells, ShouldContainResembling, matrixValue{"a": "14", "b": "289", "c": "19"})
+			// some random guesses just for fun
+			So(cells, ShouldContainResembling, matrixValue{"a": "10", "b": "29", "c": "1"})
+			So(cells, ShouldContainResembling, matrixValue{"a": "1", "b": "2", "c": "17"})
+			So(cells, ShouldContainResembling, matrixValue{"a": "8", "b": "100", "c": "5"})
+		})
+	})
+}
+
+func TestMatrixDefinitionContains(t *testing.T) {
+	Convey("With a set of test definitions", t, func() {
+		Convey("an empty definition should match nothing", func() {
+			a := matrixDefinition{}
+			So(a.contains(matrixValue{"a": "0"}), ShouldBeFalse)
+		})
+		Convey("all definitions contain the empty value", func() {
+			a := matrixDefinition{}
+			So(a.contains(matrixValue{}), ShouldBeTrue)
+			b := matrixDefinition{
+				"a": []string{"0", "1"},
+				"b": []string{"0", "1"},
+			}
+			So(b.contains(matrixValue{}), ShouldBeTrue)
+		})
+		Convey("a one-axis matrix should match all of its elements", func() {
+			a := matrixDefinition{
+				"a": []string{"0", "1", "2"},
+			}
+			So(a.contains(matrixValue{"a": "0"}), ShouldBeTrue)
+			So(a.contains(matrixValue{"a": "1"}), ShouldBeTrue)
+			So(a.contains(matrixValue{"a": "2"}), ShouldBeTrue)
+			So(a.contains(matrixValue{"a": "3"}), ShouldBeFalse)
+		})
+		Convey("a 2x2 matrix should match all of its elements", func() {
+			a := matrixDefinition{
+				"a": []string{"0", "1"},
+				"b": []string{"0", "1"},
+			}
+			cells := a.allCells()
+			So(len(cells), ShouldEqual, 4)
+			So(a.contains(matrixValue{"a": "0", "b": "0"}), ShouldBeTrue)
+			So(a.contains(matrixValue{"a": "1", "b": "0"}), ShouldBeTrue)
+			So(a.contains(matrixValue{"a": "0", "b": "1"}), ShouldBeTrue)
+			So(a.contains(matrixValue{"a": "1", "b": "1"}), ShouldBeTrue)
+			So(a.contains(matrixValue{"a": "1", "b": "2"}), ShouldBeFalse)
+			Convey("and sub-match all of its individual axis values", func() {
+				So(a.contains(matrixValue{"a": "0"}), ShouldBeTrue)
+				So(a.contains(matrixValue{"a": "1"}), ShouldBeTrue)
+				So(a.contains(matrixValue{"b": "0"}), ShouldBeTrue)
+				So(a.contains(matrixValue{"b": "1"}), ShouldBeTrue)
+				So(a.contains(matrixValue{"b": "7"}), ShouldBeFalse)
+				So(a.contains(matrixValue{"c": "1"}), ShouldBeFalse)
+				So(a.contains(matrixValue{"a": "1", "b": "1", "c": "1"}), ShouldBeFalse)
+			})
+		})
+	})
+}
+
+func TestBuildMatrixVariantSimple(t *testing.T) {
+	testMatrix := &matrix{Id: "test"}
+	Convey("With a set of test axes", t, func() {
+		axes := []matrixAxis{
+			{
+				Id: "a",
+				Values: []axisValue{
+					{Id: "0", Tags: []string{"zero"}},
+					{Id: "1", Tags: []string{"odd"}},
+					{Id: "2", Tags: []string{"even", "prime"}},
+					{Id: "3", Tags: []string{"odd", "prime"}},
+				},
+			},
+			{
+				Id: "b",
+				Values: []axisValue{
+					{Id: "0", Tags: []string{"zero"}},
+					{Id: "1", Tags: []string{"odd"}},
+					{Id: "2", Tags: []string{"even", "prime"}},
+					{Id: "3", Tags: []string{"odd", "prime"}},
+				},
+			},
+		}
+		Convey("and matrix value test:{a:0, b:0}", func() {
+			mv := matrixValue{"a": "0", "b": "0"}
+			Convey("the variant should build without error", func() {
+				v, err := buildMatrixVariant(axes, mv, testMatrix, nil)
+				So(err, ShouldBeNil)
+				Convey("with id='test__a~0_b~0', tags=[zero]", func() {
+					So(v.Name, ShouldEqual, "test__a~0_b~0")
+					So(v.matrixVal, ShouldResemble, mv)
+					So(v.Tags, ShouldContain, "zero")
+					So(v.matrixId, ShouldEqual, "test")
+				})
+			})
+		})
+		Convey("and matrix value test:{a:1, b:3}", func() {
+			mv := matrixValue{"b": "3", "a": "1"}
+			Convey("the variant should build without error", func() {
+				v, err := buildMatrixVariant(axes, mv, testMatrix, nil)
+				So(err, ShouldBeNil)
+				Convey("with id='test__a~1_b~3', tags=[odd, prime]", func() {
+					So(v.Name, ShouldEqual, "test__a~1_b~3")
+					So(v.Tags, ShouldContain, "odd")
+					So(v.Tags, ShouldContain, "prime")
+				})
+			})
+		})
+		Convey("and a matrix value that references non-existant axis values", func() {
+			mv := matrixValue{"b": "2", "a": "4"}
+			Convey("should return an error", func() {
+				_, err := buildMatrixVariant(axes, mv, testMatrix, nil)
+				So(err, ShouldNotBeNil)
+			})
+		})
+		Convey("and a matrix value that references non-existant axis names", func() {
+			mv := matrixValue{"b": "2", "coolfun": "4"}
+			Convey("should return an error", func() {
+				_, err := buildMatrixVariant(axes, mv, testMatrix, nil)
+				So(err, ShouldNotBeNil)
+			})
+		})
+	})
+}
+
+// helper for pulling declarations out of a list
+func findDecl(decls []matrixDecl, id string) matrixDecl {
+	for _, d := range decls {
+		if d.Id == id {
+			return d
+		}
+	}
+	panic("not found")
+}
+
+// helper for pulling variants out of a list
+func findVariant(vs []parserBV, id string) parserBV {
+	for _, v := range vs {
+		if v.Name == id {
+			return v
+		}
+	}
+	panic("not found")
+}
+
+func TestMatrixVariantsSimple(t *testing.T) {
+	Convey("With a delicious set of test axes", t, func() {
+		// These tests are structured around a magical project that tests
+		// colorful candies. We will be testing M&Ms, Skittles, and Necco Wafers
+		// (all candies copyright their respective holders). We need to test
+		// each color of each candy individually, so we've decided to simplify
+		// our variant definitions with a matrix! The colors are as follows:
+		//  M&Ms:     red, orange, yellow, green, blue, brown (6)
+		//  Skittles: red, orange, yellow, green, purple (5)
+		//  Necco:    orange, yellow, green, purple, pink, brown, black, white (8)
+		// TODO: maybe move this up top for multiple tests
+		axes := []matrixAxis{
+			{
+				Id: "color",
+				Values: []axisValue{
+					{Id: "red", Tags: []string{"hot_color"}},
+					{Id: "pink", Tags: []string{"hot_color"}},
+					{Id: "orange", Tags: []string{"hot_color"}},
+					{Id: "yellow", Tags: []string{"hot_color"}},
+					{Id: "brown", Tags: []string{"hot_color"}},
+					{Id: "green", Tags: []string{"cool_color"}},
+					{Id: "blue", Tags: []string{"cool_color"}},
+					{Id: "purple", Tags: []string{"cool_color"}},
+					{Id: "black"},
+					{Id: "white"},
+				},
+			},
+			{
+				Id: "brand",
+				Values: []axisValue{
+					{Id: "m&ms", Tags: []string{"chocolate"}},
+					{Id: "skittles", Tags: []string{"chewy"}},
+					{Id: "necco", Tags: []string{"chalk"}},
+				},
+			},
+		}
+		ase := NewAxisSelectorEvaluator(axes)
+		So(ase, ShouldNotBeNil)
+		Convey("and a valid matrix", func() {
+			m := matrix{
+				Id: "candy",
+				Spec: matrixDefinition{
+					"color": []string{
+						"red", "orange", "yellow", "brown", "green",
+						"blue", "purple", "black", "white", "pink",
+					},
+					"brand": []string{"m&ms", "skittles", "necco"},
+				},
+				Exclude: []matrixDefinition{
+					{"brand": []string{"skittles"}, "color": []string{"brown", "blue"}},
+					{"brand": []string{"m&ms"}, "color": []string{"purple"}},
+					{"brand": []string{"m&ms", "skittles"},
+						"color": []string{"pink", "black", "white"}},
+					{"brand": []string{"necco"}, "color": []string{"red", "blue"}},
+				},
+			}
+			Convey("building a list of variants should succeed", func() {
+				vs, errs := buildMatrixVariants(axes, ase, []matrix{m})
+				So(errs, ShouldBeNil)
+				Convey("and return the correct list of combinations", func() {
+					So(len(vs), ShouldEqual, 19)
+					// check a couple random samples
+					d1 := findVariant(vs, "candy__color~yellow_brand~skittles")
+					So(d1.Tags, ShouldContain, "hot_color")
+					So(d1.Tags, ShouldContain, "chewy")
+					d2 := findVariant(vs, "candy__color~black_brand~necco")
+					So(len(d2.Tags), ShouldEqual, 1)
+					So(d2.Tags, ShouldContain, "chalk")
+					// ensure all values are in there...
+					vals := []matrixValue{}
+					for _, v := range vs {
+						vals = append(vals, v.matrixVal)
+					}
+					So(vals, ShouldContainResembling, matrixValue{"brand": "m&ms", "color": "red"})
+					So(vals, ShouldContainResembling, matrixValue{"brand": "m&ms", "color": "orange"})
+					So(vals, ShouldContainResembling, matrixValue{"brand": "m&ms", "color": "yellow"})
+					So(vals, ShouldContainResembling, matrixValue{"brand": "m&ms", "color": "green"})
+					So(vals, ShouldContainResembling, matrixValue{"brand": "m&ms", "color": "blue"})
+					So(vals, ShouldContainResembling, matrixValue{"brand": "m&ms", "color": "brown"})
+					So(vals, ShouldContainResembling, matrixValue{"brand": "skittles", "color": "red"})
+					So(vals, ShouldContainResembling, matrixValue{"brand": "skittles", "color": "orange"})
+					So(vals, ShouldContainResembling, matrixValue{"brand": "skittles", "color": "yellow"})
+					So(vals, ShouldContainResembling, matrixValue{"brand": "skittles", "color": "green"})
+					So(vals, ShouldContainResembling, matrixValue{"brand": "skittles", "color": "purple"})
+					So(vals, ShouldContainResembling, matrixValue{"brand": "necco", "color": "orange"})
+					So(vals, ShouldContainResembling, matrixValue{"brand": "necco", "color": "yellow"})
+					So(vals, ShouldContainResembling, matrixValue{"brand": "necco", "color": "green"})
+					So(vals, ShouldContainResembling, matrixValue{"brand": "necco", "color": "purple"})
+					So(vals, ShouldContainResembling, matrixValue{"brand": "necco", "color": "pink"})
+					So(vals, ShouldContainResembling, matrixValue{"brand": "necco", "color": "white"})
+					So(vals, ShouldContainResembling, matrixValue{"brand": "necco", "color": "black"})
+				})
+			})
+		})
+		Convey("and a valid matrix using tag selectors", func() {
+			m := matrix{
+				Id: "candy",
+				Spec: matrixDefinition{
+					"color": []string{".hot_color", ".cool_color"}, // all but white and black
+					"brand": []string{"*"},
+				},
+				Exclude: []matrixDefinition{
+					{"brand": []string{".chewy"}, "color": []string{"brown", "blue"}},
+					{"brand": []string{".chocolate"}, "color": []string{"purple"}},
+					{"brand": []string{"!.chewy", "skittles"}, "color": []string{"pink"}},
+					{"brand": []string{"!skittles !m&ms"}, "color": []string{"red", "blue"}},
+				},
+			}
+			Convey("building a list of varations should succeed", func() {
+				vs, errs := buildMatrixVariants(axes, ase, []matrix{m})
+				So(errs, ShouldBeNil)
+				Convey("and return the correct list of combinations", func() {
+					// ensure all values are in there...
+					So(len(vs), ShouldEqual, 16)
+					vals := []matrixValue{}
+					for _, d := range vs {
+						vals = append(vals, d.matrixVal)
+					}
+					So(vals, ShouldContainResembling, matrixValue{"brand": "m&ms", "color": "red"})
+					So(vals, ShouldContainResembling, matrixValue{"brand": "m&ms", "color": "orange"})
+					So(vals, ShouldContainResembling, matrixValue{"brand": "m&ms", "color": "yellow"})
+					So(vals, ShouldContainResembling, matrixValue{"brand": "m&ms", "color": "green"})
+					So(vals, ShouldContainResembling, matrixValue{"brand": "m&ms", "color": "blue"})
+					So(vals, ShouldContainResembling, matrixValue{"brand": "m&ms", "color": "brown"})
+					So(vals, ShouldContainResembling, matrixValue{"brand": "skittles", "color": "red"})
+					So(vals, ShouldContainResembling, matrixValue{"brand": "skittles", "color": "orange"})
+					So(vals, ShouldContainResembling, matrixValue{"brand": "skittles", "color": "yellow"})
+					So(vals, ShouldContainResembling, matrixValue{"brand": "skittles", "color": "green"})
+					So(vals, ShouldContainResembling, matrixValue{"brand": "skittles", "color": "purple"})
+					So(vals, ShouldContainResembling, matrixValue{"brand": "necco", "color": "orange"})
+					So(vals, ShouldContainResembling, matrixValue{"brand": "necco", "color": "yellow"})
+					So(vals, ShouldContainResembling, matrixValue{"brand": "necco", "color": "green"})
+					So(vals, ShouldContainResembling, matrixValue{"brand": "necco", "color": "purple"})
+				})
+			})
+		})
+		Convey("and a matrix that uses wrong axes", func() {
+			m := matrix{
+				Id: "candy",
+				Spec: matrixDefinition{
+					"strength": []string{"weak", "middle", "big-n-tough"},
+				},
+			}
+			Convey("should fail to build", func() {
+				vs, errs := buildMatrixVariants(axes, ase, []matrix{m})
+				So(len(vs), ShouldEqual, 0)
+				So(len(errs), ShouldEqual, 3)
+			})
+		})
+		Convey("and a matrix that uses wrong axis values", func() {
+			m := matrix{
+				Id: "candy",
+				Spec: matrixDefinition{
+					"color": []string{"salmon", "infrared"},
+				},
+			}
+			Convey("should fail to build", func() {
+				vs, errs := buildMatrixVariants(axes, ase, []matrix{m})
+				So(len(vs), ShouldEqual, 0)
+				So(len(errs), ShouldEqual, 2)
+			})
+		})
+	})
+}
+
+func TestMergeAxisValue(t *testing.T) {
+	Convey("With a parserBV", t, func() {
+		pbv := parserBV{
+			RunOn:     []string{"basic_distro"},
+			Modules:   []string{"basic_module"},
+			Tags:      []string{"basic"},
+			BatchTime: nil,
+			Stepback:  nil,
+			Expansions: map[string]string{
+				"v1": "test",
+			},
+		}
+		Convey("a valid axis value should merge successfully", func() {
+			av := axisValue{
+				RunOn:     []string{"special_distro"},
+				Modules:   []string{"module++"},
+				Tags:      []string{"enterprise"},
+				BatchTime: new(int),
+				Stepback:  new(bool),
+				Variables: map[string]string{
+					"v2": "new",
+				},
+			}
+			So(pbv.mergeAxisValue(av), ShouldBeNil)
+			So(pbv.RunOn, ShouldResemble, av.RunOn)
+			So(pbv.Modules, ShouldResemble, av.Modules)
+			So(pbv.Tags, ShouldContain, "basic")
+			So(pbv.Tags, ShouldContain, "enterprise")
+			So(pbv.Stepback, ShouldNotBeNil)
+			So(pbv.BatchTime, ShouldNotBeNil)
+			So(pbv.Expansions, ShouldResemble, command.Expansions{
+				"v1": "test",
+				"v2": "new",
+			})
+		})
+		Convey("a valid axis value full of expansions should merge successfully", func() {
+			av := axisValue{
+				RunOn:   []string{"${v1}", "${v2}"},
+				Modules: []string{"${v1}__"},
+				Tags:    []string{"fat${v2}"},
+				Variables: map[string]string{
+					"v2": "${v1}!",
+				},
+			}
+			So(pbv.mergeAxisValue(av), ShouldBeNil)
+			So(pbv.RunOn, ShouldResemble, parserStringSlice{"test", "test!"})
+			So(pbv.Modules, ShouldResemble, parserStringSlice{"test__"})
+			So(pbv.Tags, ShouldContain, "basic")
+			So(pbv.Tags, ShouldContain, "fattest!")
+			So(pbv.Expansions, ShouldResemble, command.Expansions{
+				"v1": "test",
+				"v2": "test!",
+			})
+		})
+		Convey("an axis value with a bad tag expansion should fail", func() {
+			av := axisValue{
+				Tags: []string{"fat${"},
+			}
+			So(pbv.mergeAxisValue(av), ShouldNotBeNil)
+		})
+		Convey("an axis value with a bad variables expansion should fail", func() {
+			av := axisValue{
+				Variables: map[string]string{
+					"v2": "${sdsad",
+				},
+			}
+			So(pbv.mergeAxisValue(av), ShouldNotBeNil)
 		})
 	})
 }

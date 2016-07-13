@@ -119,24 +119,25 @@ func stringToCriterion(s string) selectCriterion {
 	return sc
 }
 
-// tagSelectee allows the tagSelectorEvaluator to work for multiple types
-type tagSelectee interface {
+// the tagged interface allows the tagSelectorEvaluator to work for multiple types
+type tagged interface {
 	name() string
 	tags() []string
 }
 
+// tagSelectorEvaluator evaluates selectors for arbitrary tagged items
 type tagSelectorEvaluator struct {
-	items  []tagSelectee
-	byName map[string]tagSelectee
-	byTag  map[string][]tagSelectee
+	items  []tagged
+	byName map[string]tagged
+	byTag  map[string][]tagged
 }
 
 // newTagSelectorEvaluator returns a new taskSelectorEvaluator.
-func newTagSelectorEvaluator(selectees []tagSelectee) *tagSelectorEvaluator {
+func newTagSelectorEvaluator(selectees []tagged) *tagSelectorEvaluator {
 	// cache everything
-	byName := map[string]tagSelectee{}
-	byTag := map[string][]tagSelectee{}
-	items := []tagSelectee{}
+	byName := map[string]tagged{}
+	byTag := map[string][]tagged{}
+	items := []tagged{}
 	for _, s := range selectees {
 		items = append(items, s)
 		byName[s.name()] = s
@@ -256,7 +257,7 @@ type taskSelectorEvaluator struct {
 // NewParserTaskSelectorEvaluator returns a new taskSelectorEvaluator.
 func NewParserTaskSelectorEvaluator(tasks []parserTask) *taskSelectorEvaluator {
 	// convert tasks into interface slice and use the tagSelectorEvaluator
-	var selectees []tagSelectee
+	var selectees []tagged
 	for i := range tasks {
 		selectees = append(selectees, &tasks[i])
 	}
@@ -274,32 +275,90 @@ func (t *taskSelectorEvaluator) evalSelector(s Selector) ([]string, error) {
 	return results, nil
 }
 
+// Axis selector logic
+
+// axisSelectorEvaluator expands tags used for selected matrix axis values
+type axisSelectorEvaluator struct {
+	axisEvals map[string]*tagSelectorEvaluator
+}
+
+func NewAxisSelectorEvaluator(axes []matrixAxis) *axisSelectorEvaluator {
+	evals := map[string]*tagSelectorEvaluator{}
+	// convert axis values into interface slices and use the tagSelectorEvaluator
+	for i := range axes {
+		var selectees []tagged
+		for j := range axes[i].Values {
+			selectees = append(selectees, &(axes[i].Values[j]))
+		}
+		evals[axes[i].Id] = newTagSelectorEvaluator(selectees)
+	}
+	return &axisSelectorEvaluator{
+		axisEvals: evals,
+	}
+}
+
+// evalSelector returns all variants selected by the selector.
+func (ase *axisSelectorEvaluator) evalSelector(axis string, s Selector) ([]string, error) {
+	tagEval, ok := ase.axisEvals[axis]
+	if !ok {
+		return nil, fmt.Errorf("axis '%v' does not exist", axis)
+	}
+	results, err := tagEval.evalSelector(s)
+	if err != nil {
+		return nil, fmt.Errorf("error evaluating axis '%v' tag selector: %v", axis, err)
+	}
+	return results, nil
+}
+
 // Variant selector logic
 
 // variantSelectorEvaluator expands tags used in build variant definitions.
 type variantSelectorEvaluator struct {
-	tagEval *tagSelectorEvaluator
-	//TODO cache for axes
+	tagEval  *tagSelectorEvaluator
+	axisEval *axisSelectorEvaluator
+	variants []parserBV
 }
 
-// NewParservariantSelectorEvaluator returns a new taskSelectorEvaluator.
-func NewVariantSelectorEvaluator(variants []parserBV) *variantSelectorEvaluator {
+// NewVariantSelectorEvaluator returns a new taskSelectorEvaluator.
+func NewVariantSelectorEvaluator(variants []parserBV, ase *axisSelectorEvaluator) *variantSelectorEvaluator {
 	// convert variants into interface slice and use the tagSelectorEvaluator
-	var selectees []tagSelectee
+	var selectees []tagged
 	for i := range variants {
 		selectees = append(selectees, &variants[i])
 	}
 	return &variantSelectorEvaluator{
-		tagEval: newTagSelectorEvaluator(selectees),
+		tagEval:  newTagSelectorEvaluator(selectees),
+		variants: variants,
+		axisEval: ase,
 	}
-	//TODO handle matrix selectors
 }
 
 // evalSelector returns all variants selected by the selector.
-func (v *variantSelectorEvaluator) evalSelector(s Selector) ([]string, error) {
-	results, err := v.tagEval.evalSelector(s)
+func (v *variantSelectorEvaluator) evalSelector(vs *variantSelector) ([]string, error) {
+	if vs == nil {
+		return nil, fmt.Errorf("empty selector")
+	}
+	if vs.matrixSelector != nil {
+		evaluatedSelector, errs := vs.matrixSelector.evalutedCopy(v.axisEval)
+		if len(errs) > 0 {
+			return nil, fmt.Errorf(
+				"errors while evaluating variant selector %v: %v", vs.matrixSelector, errs)
+		}
+		results := []string{}
+		// this could be sped up considerably with caching, but I doubt we'll need to
+		for _, v := range v.variants {
+			if v.matrixVal != nil && evaluatedSelector.contains(v.matrixVal) {
+				results = append(results, v.Name)
+			}
+		}
+		if len(results) == 0 {
+			return nil, fmt.Errorf("variant selector %v returns no variants", vs.matrixSelector)
+		}
+		return results, nil
+	}
+	results, err := v.tagEval.evalSelector(ParseSelector(vs.stringSelector))
 	if err != nil {
-		return nil, fmt.Errorf("error evaluating variant tag selector: %v", err)
+		return nil, fmt.Errorf("evaluating variant tag selector: %v", err)
 	}
 	return results, nil
 }

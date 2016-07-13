@@ -67,6 +67,7 @@ func (self *Expansions) Exists(expansion string) bool {
 	return ok
 }
 
+// TODO strict mode
 // Apply the expansions to a single string.
 // Return the expanded string, or an error if the input string is malformed.
 func (self *Expansions) ExpandString(toExpand string) (string, error) {
@@ -101,8 +102,7 @@ func (self *Expansions) ExpandString(toExpand string) (string, error) {
 		}))
 
 	if malformedFound || strings.Contains(expanded, "${") {
-		return expanded, fmt.Errorf("The line \"%v\" is badly formed - it"+
-			" contains an unclosed expansion", expanded)
+		return expanded, fmt.Errorf("\"%v\" contains an unclosed expansion", expanded)
 	}
 
 	return expanded, nil
