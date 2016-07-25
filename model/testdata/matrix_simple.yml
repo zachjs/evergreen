@@ -54,6 +54,14 @@ matrixes:
         - name: test_${length|0}
           status: ${color}
     requires:  test_${length|0}
+  rules:
+  - if:
+      color: "*"
+      shape: ".round"
+    then:
+      set:
+        tags: "gotcha_boy"
+        stepback: false
 
 
 

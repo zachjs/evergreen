@@ -228,6 +228,8 @@ type parserBV struct {
 	// internal matrix stuff
 	matrixId  string
 	matrixVal matrixValue
+
+	matrixRules []ruleAction
 }
 
 // helper methods for variant tag evaluations
@@ -1067,15 +1069,12 @@ func buildMatrixVariant(axes []matrixAxis, mv matrixValue, m *matrix, ase *axisS
 					return nil, fmt.Errorf("evaluating %v rule %v: %v", m.Id, i, err)
 				}
 			}
-			if len(r.Then.RemoveTasks) > 0 {
-				// append to pbv rules
+			// we append add/remove task rules internally and execute them
+			// during task evaluation, when other tasks are being expanded.
+			if len(r.Then.RemoveTasks) > 0 || len(r.Then.AddTasks) > 0 {
+				v.matrixRules = append(v.matrixRules, r.Then)
 			}
-			if len(r.Then.AddTasks) > 0 {
-				// append to pbv rules
-			}
-
 		}
-
 	}
 	return &v, nil
 }
