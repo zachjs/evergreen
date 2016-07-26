@@ -584,7 +584,7 @@ axes:
 		})
 		Convey("a barebones matrix definition should parse", func() {
 			simple := `
-matrixes:
+buildvariants:
 - matrix_name: "test"
   matrix_spec: {"os": ".linux", "bits":["32", "64"]}
   exclude_spec: [{"os":"ubuntu", "bits":"32"}]
@@ -598,8 +598,8 @@ matrixes:
 `
 			p, errs := createIntermediateProject([]byte(simple))
 			So(errs, ShouldBeNil)
-			So(len(p.Matrixes), ShouldEqual, 2)
-			m1 := p.Matrixes[0]
+			So(len(p.matrices), ShouldEqual, 2)
+			m1 := p.matrices[0]
 			So(m1, ShouldResemble, matrix{
 				Id: "test",
 				Spec: matrixDefinition{
@@ -610,7 +610,7 @@ matrixes:
 					{"os": []string{"ubuntu"}, "bits": []string{"32"}},
 				},
 			})
-			m2 := p.Matrixes[1]
+			m2 := p.matrices[1]
 			So(m2, ShouldResemble, matrix{
 				Id: "test2",
 				Spec: matrixDefinition{

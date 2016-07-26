@@ -32,7 +32,7 @@ axes:
     display_name: "Rectangle"
     run_on: "right_angler"
 
-matrixes:
+buildvariants:
 - matrix_name: tester
   display_name: ${color} ${shape} Shape
   matrix_spec:
@@ -62,8 +62,6 @@ matrixes:
       set:
         tags: "gotcha_boy"
         stepback: false
-
-
 
 tasks:
 - name: "test_task"

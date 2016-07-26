@@ -62,7 +62,7 @@ type parserProject struct {
 
 	// Matrix code
 	Axes     []matrixAxis `yaml:"axes"`
-	Matrixes []matrix     `yaml:"matrixes"`
+	matrices []matrix
 }
 
 // parserTask represents an intermediary state of task definitions.
@@ -228,6 +228,7 @@ type parserBV struct {
 	// internal matrix stuff
 	matrixId  string
 	matrixVal matrixValue
+	matrix    *matrix
 
 	matrixRules []ruleAction
 }
@@ -235,6 +236,28 @@ type parserBV struct {
 // helper methods for variant tag evaluations
 func (pbv *parserBV) name() string   { return pbv.Name }
 func (pbv *parserBV) tags() []string { return pbv.Tags }
+
+func (pbv *parserBV) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	// first attempt to unmarshal into a matrix
+	m := matrix{}
+	if err := unmarshal(&m); err == nil {
+		if m.Id != "" {
+			*pbv = parserBV{matrix: &m}
+			return nil
+		}
+	}
+	// otherwise use a BV copy type to skip this Unmarshal method
+	type copyType parserBV
+	var bv copyType
+	if err := unmarshal(&bv); err != nil {
+		return err
+	}
+	if bv.Name == "" {
+		return fmt.Errorf("buildvariant must have a name")
+	}
+	*pbv = parserBV(bv)
+	return nil
+}
 
 func (pbv *parserBV) mergeAxisValue(av axisValue) error {
 	// expand the expansions (woah, dude) and update them
@@ -502,6 +525,8 @@ func createIntermediateProject(yml []byte) (*parserProject, []error) {
 	if err != nil {
 		return nil, []error{err}
 	}
+	// before returning, filter the matrix definitions into their own slice
+	p.BuildVariants, p.matrices = sieveMatrixVariants(p.BuildVariants)
 	return p, nil
 }
 
@@ -535,7 +560,7 @@ func translateProject(pp *parserProject) (*Project, []error) {
 	tse := NewParserTaskSelectorEvaluator(pp.Tasks)
 	ase := NewAxisSelectorEvaluator(pp.Axes)
 	var evalErrs, errs []error
-	matrixVariants, errs := buildMatrixVariants(pp.Axes, ase, pp.Matrixes)
+	matrixVariants, errs := buildMatrixVariants(pp.Axes, ase, pp.matrices)
 	evalErrs = append(evalErrs, errs...)
 	// TODO make immutable
 	pp.BuildVariants = append(pp.BuildVariants, matrixVariants...)
@@ -545,6 +570,19 @@ func translateProject(pp *parserProject) (*Project, []error) {
 	proj.BuildVariants, errs = evaluateBuildVariants(tse, vse, pp.BuildVariants)
 	evalErrs = append(evalErrs, errs...)
 	return proj, evalErrs
+}
+
+// sieveMatrixVariants takes a set of parserBVs and groups them into regular
+// buildvariant matrix definitions and matrix definitions.
+func sieveMatrixVariants(bvs []parserBV) (regular []parserBV, matrices []matrix) {
+	for _, bv := range bvs {
+		if bv.matrix != nil {
+			matrices = append(matrices, *bv.matrix)
+		} else {
+			regular = append(regular, bv)
+		}
+	}
+	return regular, matrices
 }
 
 // evaluateTasks translates intermediate tasks into true ProjectTask types,
@@ -922,19 +960,6 @@ type matrix struct {
 	Rules     []matrixRule      `yaml:"rules"`
 }
 
-// helper type for caching the id, tags, and
-type matrixDecl struct {
-	Id         string
-	Matrix     *matrix
-	Value      matrixValue
-	AxisValues []*axisValue
-	Tags       []string
-}
-
-// helper methods for variant tag evaluations
-func (mdecl *matrixDecl) name() string   { return mdecl.Id }
-func (mdecl *matrixDecl) tags() []string { return mdecl.Tags }
-
 // evaluateAxisTags returns an expanded list of axis value ids with tag selectors evaluated.
 func evaluateAxisTags(ase *axisSelectorEvaluator, axis string, selectors []string) ([]string, []error) {
 	var errs []error
@@ -1000,7 +1025,10 @@ func buildMatrixVariant(axes []matrixAxis, mv matrixValue, m *matrix, ase *axisS
 	v := parserBV{
 		matrixVal:  mv,
 		matrixId:   m.Id,
-		Tags:       m.Tags,
+		Stepback:   m.Stepback,
+		BatchTime:  m.BatchTime,
+		Modules:    m.Modules,
+		RunOn:      m.RunOn,
 		Expansions: *command.NewExpansions(mv),
 	}
 	displayNameExp := command.Expansions{}
@@ -1023,7 +1051,7 @@ func buildMatrixVariant(axes []matrixAxis, mv matrixValue, m *matrix, ase *axisS
 		if err := v.mergeAxisValue(axisVal); err != nil {
 			return nil, fmt.Errorf("processing axis value %v,%v: %v", a.Id, axisVal.Id, err)
 		}
-		// for display names, fall back to the axis value's id so we have *something*
+		// for display names, fall back to the axis values id so we have *something*
 		if axisVal.DisplayName != "" {
 			displayNameExp.Put(a.Id, axisVal.DisplayName)
 		} else {
@@ -1050,6 +1078,10 @@ func buildMatrixVariant(axes []matrixAxis, mv matrixValue, m *matrix, ase *axisS
 	}
 	v.DisplayName = disp
 
+	// add final matrix-level tags and tasks
+	if err := v.mergeAxisValue(axisValue{Tags: m.Tags}); err != nil {
+		return nil, fmt.Errorf("processing matrix tags: %v", err)
+	}
 	for _, t := range m.Tasks {
 		expTask, err := expandParserBVTask(t, v.Expansions)
 		if err != nil {
@@ -1070,7 +1102,7 @@ func buildMatrixVariant(axes []matrixAxis, mv matrixValue, m *matrix, ase *axisS
 				}
 			}
 			// we append add/remove task rules internally and execute them
-			// during task evaluation, when other tasks are being expanded.
+			// during task evaluation, when other tasks are being evaluated.
 			if len(r.Then.RemoveTasks) > 0 || len(r.Then.AddTasks) > 0 {
 				v.matrixRules = append(v.matrixRules, r.Then)
 			}
