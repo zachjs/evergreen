@@ -619,6 +619,23 @@ buildvariants:
 				},
 			})
 		})
+		Convey("a mixed definition should parse", func() {
+			simple := `
+buildvariants:
+- matrix_name: "test"
+  matrix_spec: {"os": "*", "bits": "*"}
+- name: "single_variant"
+  tasks: "*"
+`
+			p, errs := createIntermediateProject([]byte(simple))
+			So(errs, ShouldBeNil)
+			So(len(p.matrices), ShouldEqual, 1)
+			m1 := p.matrices[0]
+			So(m1.Id, ShouldEqual, "test")
+			So(len(p.BuildVariants), ShouldEqual, 1)
+			So(p.BuildVariants[0].Name, ShouldEqual, "single_variant")
+			So(p.BuildVariants[0].Tasks, ShouldResemble, parserBVTasks{parserBVTask{Name: "*"}})
+		})
 	})
 }
 
@@ -830,16 +847,6 @@ func TestBuildMatrixVariantSimple(t *testing.T) {
 			})
 		})
 	})
-}
-
-// helper for pulling declarations out of a list
-func findDecl(decls []matrixDecl, id string) matrixDecl {
-	for _, d := range decls {
-		if d.Id == id {
-			return d
-		}
-	}
-	panic("not found")
 }
 
 // helper for pulling variants out of a list
