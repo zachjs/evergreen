@@ -11,7 +11,7 @@ import (
 )
 
 // ShouldContainResembling tests whether a slice contains an element that DeepEquals
-// the expected input. TODO make this a subpkg
+// the expected input.
 func ShouldContainResembling(actual interface{}, expected ...interface{}) string {
 	if len(expected) != 1 {
 		return "ShouldContainResembling takes 1 argument"
@@ -1092,5 +1092,42 @@ func TestMergeAxisValue(t *testing.T) {
 			}
 			So(pbv.mergeAxisValue(av), ShouldNotBeNil)
 		})
+	})
+}
+
+func TestRulesEvaluation(t *testing.T) {
+	Convey("With a series of test parserBVs and tasks", t, func() {
+		taskDefs := []parserTask{
+			{Name: "red", Tags: []string{"primary", "warm"}},
+			{Name: "orange", Tags: []string{"secondary", "warm"}},
+			{Name: "yellow", Tags: []string{"primary", "warm"}},
+			{Name: "green", Tags: []string{"secondary", "cool"}},
+			{Name: "blue", Tags: []string{"primary", "cool"}},
+			{Name: "purple", Tags: []string{"secondary", "cool"}},
+			{Name: "brown", Tags: []string{"tertiary"}},
+			{Name: "black", Tags: []string{"special"}},
+			{Name: "white", Tags: []string{"special"}},
+		}
+		tse := NewParserTaskSelectorEvaluator(taskDefs)
+		Convey("a variant with a 'remove' rule should remove the given tasks", func() {
+			bvs := []parserBV{{
+				Name: "test",
+				Tasks: parserBVTasks{
+					{Name: "blue"},
+					{Name: ".special"},
+					{Name: ".tertiary"},
+				},
+				matrixRules: []ruleAction{
+					{RemoveTasks: []string{".primary !.warm"}}, //remove blue
+					{RemoveTasks: []string{"brown"}},
+				},
+			}}
+			evaluated, errs := evaluateBuildVariants(tse, nil, bvs)
+			So(errs, ShouldBeNil)
+			v1 := evaluated[0]
+			So(v1.Name, ShouldEqual, "test")
+			So(len(v1.Tasks), ShouldEqual, 2)
+		})
+		// TODO add_task, crazy combooo
 	})
 }

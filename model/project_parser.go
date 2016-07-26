@@ -630,10 +630,38 @@ func evaluateBuildVariants(tse *taskSelectorEvaluator, vse *variantSelectorEvalu
 			Tags:        pbv.Tags,
 		}
 		bv.Tasks, errs = evaluateBVTasks(tse, vse, pbv.Tasks)
+		// evaluate any rules passed in during matrix construction
+		for _, r := range pbv.matrixRules {
+			// remove_tasks removes all tasks with matching names
+			if len(r.RemoveTasks) > 0 {
+				prunedTasks := []BuildVariantTask{}
+				toRemove := []string{}
+				for _, t := range r.RemoveTasks {
+					removed, err := tse.evalSelector(ParseSelector(t))
+					if err != nil {
+						evalErrs = append(evalErrs, fmt.Errorf("remove rule: %v", err))
+						continue
+					}
+					toRemove = append(toRemove, removed...)
+				}
+				for _, t := range bv.Tasks {
+					if !util.SliceContains(toRemove, t.Name) {
+						prunedTasks = append(prunedTasks, t)
+					}
+				}
+				bv.Tasks = prunedTasks
+			}
+			// add_tasks adds the given BuildVariantTasks, returning errors for any collisions
+			if len(r.AddTasks) > 0 {
+				bv.Tasks, errs = evaluateBVTasks(tse, vse, append(pbv.Tasks, r.AddTasks...))
+				evalErrs = append(evalErrs, errs...)
+			}
+		}
 		evalErrs = append(evalErrs, errs...)
 		bvs = append(bvs, bv)
 	}
-	return bvs, errs
+	// evaluate any stored rules from matrix variant creation
+	return bvs, evalErrs
 }
 
 // evaluateBVTasks translates intermediate tasks into true BuildVariantTask types,
